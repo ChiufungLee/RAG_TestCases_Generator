@@ -72,8 +72,10 @@ async function loadHistory(scenario) {
             method: 'GET',
             credentials: 'include'
         });
+        
         if (response.ok) {
             const historyData = await response.json();
+            console.log(historyData);
             renderHistory(historyData);
         } else {
             console.error('加载历史记录失败');

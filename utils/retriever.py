@@ -1,3 +1,5 @@
+import functools
+from threading import Lock
 import chromadb
 from typing import List, Dict, Any
 from openai import OpenAI  
@@ -8,6 +10,11 @@ import os
 load_dotenv()
 ALIYUN_API_KEY = os.getenv("ALIYUN_API_KEY")
 ALIYUN_BASE_URL = os.getenv("ALIYUN_BASE_URL")
+
+deepseek_api_key = os.getenv("DEEPSEEK_API_KEY")
+RAG_DB_PATH = os.getenv("RAG_DB_PATH")
+
+
 
 class ChromaRetriever:
     def __init__(
@@ -44,7 +51,7 @@ class ChromaRetriever:
         # 获取 Chroma 集合
         self.collection = self.chroma_client.get_collection(name=collection_name)
 
-    def embed(self, text: str) -> List[float]:
+    async def embed(self, text: str) -> List[float]:
         """
         生成文本的嵌入向量
         :param text: 输入文本
@@ -59,9 +66,9 @@ class ChromaRetriever:
         print(f"使用的 token 数量为：{response.usage.total_tokens}")
         return response.data[0].embedding  # 返回向量数据
 
-    def get_relevant_documents(self, query: str, n_results: int = 3) -> List[Document]:
+    async def get_relevant_documents(self, query: str, n_results: int = 3) -> List[Document]:
         """LangChain标准接口方法"""
-        query_vector = self.embed(query)
+        query_vector = await self.embed(query)
         results = self.collection.query(
             query_embeddings=[query_vector],
             n_results=n_results,
@@ -77,7 +84,7 @@ class ChromaRetriever:
                     documents.append(Document(page_content=text, metadata=metadata))
         return documents
     
-    def query(
+    async def query(
         self,
         query_text: str,
         n_results: int = 3,
@@ -97,3 +104,53 @@ class ChromaRetriever:
             **kwargs
         )
         return results
+
+# 用于保护检索器创建的线程锁
+_retriever_lock = Lock()
+_retriever_cache = {}
+
+@functools.lru_cache(maxsize=2)  # 最多缓存2个不同场景的检索器
+def _get_cached_chroma_client():
+    """缓存的Chroma客户端单例（进程级别）"""
+    print(f"初始化Chroma客户端，路径: {RAG_DB_PATH}")
+    return chromadb.PersistentClient(path=RAG_DB_PATH)
+
+
+
+def get_rag_retriever(scenario: str):
+    """根据场景获取对应的RAG检索器（优化后）"""
+    COLLECTION_MAP = {  # 常量用大写
+        "运维助手": "devops_tool",
+        "产品手册": "product_manual"
+    }
+    
+    if scenario not in COLLECTION_MAP:
+        return None
+    
+    collection_name = COLLECTION_MAP[scenario]
+    
+    # 检查缓存
+    with _retriever_lock:
+        if scenario in _retriever_cache:
+            return _retriever_cache[scenario]
+        
+        try:
+            # 使用缓存的客户端
+            chroma_client = _get_cached_chroma_client()
+            
+            retriever = ChromaRetriever(
+                collection_name=collection_name,
+                chroma_client=chroma_client,
+                model_name="text-embedding-v4"
+            )
+            
+            # 存入缓存
+            _retriever_cache[scenario] = retriever
+            print(f"已为场景 '{scenario}' 创建并缓存检索器")
+            return retriever
+            
+        except Exception as e:
+            # 使用logging模块替代print
+            import logging
+            logging.error(f"创建 {scenario} 场景检索器失败: {e}", exc_info=True)
+            return None
