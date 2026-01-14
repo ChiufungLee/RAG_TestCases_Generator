@@ -3,46 +3,230 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>用户登录</title>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <link rel="stylesheet" href="/static/style.css">
+    <title>登录 - 基金管理后台</title>
+    <style>
+        * {
+            margin: 0;
+        }
+        /* 登录页面特定样式 */
+        .login-container {
+            display: flex;
+            min-height: 100vh;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        }
+        
+        .login-left {
+            flex: 1;
+            display: none;
+        }
+        
+        .login-right {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            padding: 40px;
+            background: white;
+        }
+        
+        .login-form-container {
+            width: 100%;
+            max-width: 400px;
+        }
+        
+        .login-logo {
+            text-align: center;
+            margin-bottom: 40px;
+        }
+        
+        .login-logo h1 {
+            color: #333;
+            margin-bottom: 10px;
+        }
+        
+        .login-logo p {
+            color: #666;
+        }
+        
+        .login-form {
+            background: #f8f9fa;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+        
+        .form-group {
+            margin-bottom: 20px;
+        }
+        
+        .form-group label {
+            display: block;
+            margin-bottom: 8px;
+            color: #555;
+            font-weight: 500;
+        }
+        
+        .form-group input {
+            width: 90%;
+            padding: 12px 15px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            font-size: 16px;
+            transition: border-color 0.3s;
+        }
+        
+        .form-group input:focus {
+            outline: none;
+            border-color: #667eea;
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+        }
+        
+        .remember-me {
+            display: flex;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+        
+        .remember-me input {
+            margin-right: 10px;
+            width: auto;
+        }
+        
+        .remember-me label {
+            margin-bottom: 0;
+            color: #666;
+            font-weight: normal;
+        }
+        
+        .login-btn {
+            width: 100%;
+            padding: 12px;
+            background: #667eea;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            font-size: 16px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: background-color 0.3s;
+        }
+        
+        .login-btn:hover {
+            background: #5a67d8;
+        }
+        
+        .login-btn:disabled {
+            background: #a0aec0;
+            cursor: not-allowed;
+        }
+        
+        .login-footer {
+            text-align: center;
+            margin-top: 20px;
+            color: #666;
+        }
+        
+        .login-footer a {
+            color: #667eea;
+            text-decoration: none;
+            margin-left: 5px;
+        }
+        
+        .login-footer a:hover {
+            text-decoration: underline;
+        }
+        
+        .error-message {
+            color: #e53e3e;
+            background: #fed7d7;
+            padding: 10px;
+            border-radius: 5px;
+            margin-bottom: 20px;
+            display: none;
+        }
+        
+        .success-message {
+            color: #38a169;
+            background: #c6f6d5;
+            padding: 10px;
+            border-radius: 5px;
+            margin-bottom: 20px;
+            display: none;
+        }
+        
+        @media (min-width: 768px) {
+            .login-left {
+                display: flex;
+                flex-direction: column;
+                justify-content: center;
+                align-items: center;
+                color: white;
+                padding: 40px;
+            }
+            
+            .login-left h2 {
+                font-size: 2.5rem;
+                margin-bottom: 20px;
+            }
+            
+            .login-left p {
+                font-size: 1.2rem;
+                opacity: 0.9;
+            }
+        }
+    </style>
 </head>
 <body>
     <div class="login-container">
-        <h2>用户登录</h2>
-        
-        <!-- 错误信息区域 -->
-         {% if error %}
-        <div class="error-message">
-            <i class="fas fa-exclamation-circle"></i>
-            <div>{{ error }}</div>
+        <!-- 左侧装饰区域 -->
+        <div class="login-left">
+            <h2>进入智能测试平台</h2>
+            <p>专业的智能测试管理工具</p>
+            <p>助您轻松开展测试工作</p>
         </div>
-        {% endif %}
         
-        <form method="post" action="/login">
-            <div class="form-group">
-                <label for="username">用户名</label>
-                <i class="fas fa-user input-icon"></i>
-                <input type="text" id="username" name="username" required placeholder="请输入用户名">
+        <!-- 右侧登录区域 -->
+        <div class="login-right">
+            <div class="login-form-container">
+                <div class="login-logo">
+                    <h1>欢迎回来</h1>
+                    <p>请登录您的账户</p>
+                </div>
+                
+                <!-- 错误消息 -->
+                <div id="errorMessage" class="error-message"></div>
+                
+                <!-- 成功消息 -->
+                <div id="successMessage" class="success-message"></div>
+                
+                <form id="loginForm" class="login-form">
+                    <div class="form-group">
+                        <label for="username">用户名</label>
+                        <input type="text" id="username" name="username" required placeholder="请输入用户名">
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="password">密码</label>
+                        <input type="password" id="password" name="password" required placeholder="请输入密码">
+                    </div>
+                    
+                    <!-- <div class="remember-me">
+                        <input type="checkbox" id="rememberMe" name="rememberMe">
+                        <label for="rememberMe">记住密码</label>
+                    </div> -->
+                    
+                    <button type="submit" id="loginButton" class="login-btn">登录</button>
+                    
+                    <div class="login-footer">
+                        还没有账户？
+                        <a href="/register">立即注册</a>
+                    </div>
+                </form>
             </div>
-            
-            <div class="form-group">
-                <label for="password">密码</label>
-                <i class="fas fa-lock input-icon"></i>
-                <input type="password" id="password" name="password" required placeholder="请输入密码">
-            </div>
-
-            <button type="submit">
-                <i class="fas fa-sign-in-alt"></i> 登 录
-            </button>
-        </form>
-        
-        <a href="/register" class="register-link">没有账号？去注册</a>
-        
-        <div class="footer">
-            <p>©2025 Contact With <a href="mailto:lzfdd937@163.com" class="email-link">lzfdd937@163.com</a></p>
         </div>
     </div>
 
+    <script src="/static/login.js"></script>
 </body>
 </html>

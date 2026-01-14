@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>知识库管理系统</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="/static/func_lib.css">
+</head>
+<body>
+    <div class="app-container">
+        <!-- 移动端菜单按钮 -->
+        <button class="mobile-menu-btn" id="mobileMenuBtn" aria-label="打开菜单">
+            <i class="fas fa-bars"></i>
+        </button>
+
+        <!-- 左侧导航栏 -->
+        <aside class="sidebar" aria-label="系统导航">
+            <div class="sidebar-header">
+                <img src="/static/images/AI_Test_Logo.png" width="200" alt="应用程序标志" class="app-logo">
+                <button class="new-chat-btn" aria-label="新建对话" id="newChatBtn">
+                    <a href="/chat">
+                        <i class="fas fa-plus"></i> 新建对话
+                    </a>
+                </button>
+            </div>
+            
+            <div class="function-menu">
+                <div class="active">
+                    <i class="fas fa-database"></i>
+                    <p>知识库管理</p>
+                </div>
+                <div onclick="showAboutModal()">
+                    <i class="fas fa-vial"></i>
+                    <p>关于此项目</p>
+                </div>
+                <!-- <div>
+                    <i class="fas fa-cog"></i>
+                    <p>系统设置</p>
+                </div>
+                <div>
+                    <i class="fas fa-history"></i>
+                    <p>操作日志</p>
+                </div> -->
+            </div>
+            
+        </aside>
+        
+        <!-- 右侧主内容区 -->
+        <main class="main-content">
+            <header class="lib-header">
+                <!-- <h1 class="lib-title">
+                    <i class="fas fa-database"></i> 知识库管理
+                </h1> -->
+                <p class="lib-subtitle">管理您的知识库，整理和存储重要信息</p>
+            </header>
+            
+            <!-- 列表头部 -->
+            <div class="list-container">
+                <div class="list-header">
+
+                            <button class="create-btn" id="createLibBtn">
+            <i class="fas fa-plus"></i> 新建知识库
+        </button>
+                    <div class="search-box">
+                        <i class="fas fa-search"></i>
+                        <input type="text" placeholder="搜索知识库..." id="searchInput">
+                    </div>
+                </div>
+                
+                <!-- 列表区域 -->
+                <div class="list-area" id="knowledgeList">
+                    <!-- 知识库卡片将通过JS动态生成 -->
+                </div>
+                
+                <!-- 空状态 -->
+                <div class="empty-state" id="emptyState" style="display: none;">
+                    <i class="fas fa-database"></i>
+                    <h3>暂无知识库</h3>
+                    <p>点击下方按钮创建您的第一个知识库</p>
+                </div>
+                
+            </div>
+            
+            <footer class="footer-note">
+                <p>你可以在 <a href="https://github.com/ChiufungLee/FastAPI_Local_RAG" class="email-link">GitHub</a> 上查看本项目代码</p>
+                <!-- <p style="margin-top: 5px; font-size: 0.9rem;">当前版本：2.1.0 | 知识库数量：<span id="libCount">0</span></p> -->
+            </footer>
+        </main>
+    </div>
+
+    <!-- 创建知识库模态框 -->
+    <div class="modal" id="createModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 class="modal-title">创建知识库</h3>
+                <button class="close-btn" id="closeModalBtn">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            
+            <form id="createForm">
+                <div class="form-group">
+                    <label for="libName">知识库名称</label>
+                    <input type="text" id="libName" placeholder="请输入知识库名称" required>
+                </div>
+                
+                <div class="form-group">
+                    <label for="libDescription">描述（可选）</label>
+                    <textarea id="libDescription" placeholder="请描述这个知识库的主要内容和用途"></textarea>
+                </div>
+                
+                <div class="modal-actions">
+                    <button type="button" class="btn-secondary" id="cancelBtn">取消</button>
+                    <button type="submit" class="btn-primary">创建知识库</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <script src="/static/func_lib.js"></script>
+</body>
+</html>

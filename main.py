@@ -4,7 +4,7 @@ from starlette.middleware.sessions import SessionMiddleware
 import secrets
 from models.database import init_db
 from api.api_v1 import api_router
-from api.endpoints import auth, chat
+from api.endpoints import auth, chat, knowledg_api as kb
 
 app = FastAPI()
 
@@ -20,3 +20,4 @@ init_db()
 app.include_router(api_router, prefix="/api/v1")
 app.include_router(auth.router)
 app.include_router(chat.app)
+app.include_router(kb.app)

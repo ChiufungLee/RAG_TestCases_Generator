@@ -1,10 +1,11 @@
 // 当前应用状态
 const appState = {
-    currentScenario: '产品手册',
+    currentScenario: 'product_manual',  // 默认场景
     currentConversation: null,
     userId: null,
     username: null,
-    isProcessing: false
+    isProcessing: false,
+    currentKnowledgeBaseId: null  // 当前选中的知识库ID
 };
 
 // DOM 元素引用
@@ -15,19 +16,80 @@ const elements = {
     chatInput: document.getElementById('chatInput'),
     sendBtn: document.getElementById('sendBtn'),
     newChatBtn: document.getElementById('newChatBtn'),
-    chatTitle: document.getElementById('chatTitle')
+    // chatTitle: document.getElementById('chatTitle')
 };
 
 // 初始化应用
 document.addEventListener('DOMContentLoaded', async () => {
 
-    await loadHistory(appState.currentScenario);
+    // 加载知识库列表
+    await loadKnowledgeBases();
+
+    const selectElement = document.getElementById('knowledgeBaseSelect');
+    let firstKbId = null;
+    
+    if (selectElement.options.length > 0) {
+        // 选项索引0是默认选项（如"请选择知识库"），所以第一个知识库在索引1
+        firstKbId = selectElement.options[0].value;
+        appState.currentKnowledgeBaseId = firstKbId;
+        
+        // 2. 同步下拉框选中状态
+        selectElement.value = firstKbId;
+        
+        console.log(`自动设置当前知识库: ${firstKbId}`);
+    } else {
+        console.log("没有可用的知识库");
+        appState.currentKnowledgeBaseId = null;
+    }
+
+    await loadHistory(appState.currentScenario, appState.currentKnowledgeBaseId);
     
     setupEventListeners();
     
     elements.chatInput.addEventListener('input', () => {
         elements.sendBtn.disabled = elements.chatInput.value.trim() === '' || appState.isProcessing;
     });
+
+
+    
+    // 监听知识库选择变化
+    document.getElementById('knowledgeBaseSelect').addEventListener('change', async function() {
+        const selectedKbId = this.value;
+        // 更新应用状态
+        appState.currentKnowledgeBaseId = selectedKbId;
+        
+        // 刷新历史记录
+        await loadHistory(appState.currentScenario, selectedKbId);
+        
+        // 如果有当前对话，重新加载对话内容
+        if (appState.currentConversation) {
+            await loadConversation(appState.currentConversation, selectedKbId);
+        } else {
+            // 如果没有当前对话，清空聊天区域并显示欢迎消息
+            elements.chatMessages.innerHTML = '';
+            elements.chatMessages.innerHTML = `
+                <div class="message-container">
+                    <div class="message ai-message">
+                        <div class="message-content">
+                            <p>你好！欢迎使用AI智能测试平台。我可以帮你：</p>
+                            <p>- 梳理需求、设计测试策略、分析测试场景和测试点；</p>
+                            <p>- 根据知识库和你的需求帮你生成测试用例；</p>
+                            <p>- 排查产品问题、阅读用户手册等。</p>
+                            <p>你可以上传文档，创建和使用新的知识库。</p>
+                            <p>请选择左侧的功能场景，输入你的问题，让我们开始吧！</p>
+                        </div>
+                    </div>
+                </div>
+            `;  
+            // const scenarioWelcome = getScenarioWelcomeMessage(appState.currentScenario);
+            // const welcomeMsg = {
+            //     role: "assistant",
+            //     content: scenarioWelcome
+            // };
+            // addMessageToChat(welcomeMsg);
+        }
+    });
+
 });
 
 
@@ -64,18 +126,23 @@ window.addEventListener('beforeunload', () => {
 });
 
 // 加载历史记录
-async function loadHistory(scenario) {
+async function loadHistory(scenario, knowledgeBaseId = null) {
     elements.historyContainer.innerHTML = '<div class="loader">加载历史记录中...</div>';
-    
     try {
-        const response = await fetch(`/api/history?scenario=${encodeURIComponent(scenario)}`, {
+        // 构建查询参数
+        const params = new URLSearchParams();
+        params.append('scenario', scenario);
+        if (knowledgeBaseId) {
+            params.append('knowledge_base_id', knowledgeBaseId);
+        }
+        
+        const response = await fetch(`/api/history?${params.toString()}`, {
             method: 'GET',
             credentials: 'include'
         });
         
         if (response.ok) {
             const historyData = await response.json();
-            console.log(historyData);
             renderHistory(historyData);
         } else {
             console.error('加载历史记录失败');
@@ -84,6 +151,75 @@ async function loadHistory(scenario) {
     } catch (error) {
         console.error('加载历史记录时出错:', error);
         elements.historyContainer.innerHTML = '<div class="empty-state">加载历史记录时出错</div>';
+    }    
+    // try {
+    //     const response = await fetch(`/api/history?scenario=${encodeURIComponent(scenario)}&knowledge_base_id=${encodeURIComponent(knowledgeBaseId)}`, {
+    //         method: 'GET',
+    //         credentials: 'include'
+    //     });
+        
+    //     if (response.ok) {
+    //         const historyData = await response.json();
+    //         console.log(historyData);
+    //         renderHistory(historyData);
+    //     } else {
+    //         console.error('加载历史记录失败');
+    //         elements.historyContainer.innerHTML = '<div class="empty-state">无法加载历史记录</div>';
+    //     }
+    // } catch (error) {
+    //     console.error('加载历史记录时出错:', error);
+    //     elements.historyContainer.innerHTML = '<div class="empty-state">加载历史记录时出错</div>';
+    // }
+}
+
+async function loadKnowledgeBases() {
+    try {
+        const response = await fetch('/api/knowledge-bases/');
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        
+        const knowledgeBases = await response.json();
+        const selectElement = document.getElementById('knowledgeBaseSelect');
+        
+        // 清空现有选项（保留默认选项）
+        while (selectElement.options.length > 1) {
+            selectElement.remove(1);
+        }
+        
+        if (knowledgeBases.length === 0) {
+            // 没有知识库的情况
+            console.log('没有可用的知识库');
+            
+            // 添加一个不可选的提示选项
+            const emptyOption = document.createElement('option');
+            emptyOption.value = "";
+            emptyOption.textContent = "暂无知识库，请先创建";
+            emptyOption.disabled = true;
+            emptyOption.selected = true;
+            selectElement.appendChild(emptyOption);
+            
+            // 清空应用状态中的知识库ID
+            appState.currentKnowledgeBaseId = null;
+            
+            // 隐藏知识库统计信息
+            const kbInfo = document.getElementById('kbInfo');
+            if (kbInfo) kbInfo.style.display = 'none';
+            
+            return;
+        }
+
+        // 添加知识库选项
+        knowledgeBases.forEach(kb => {
+            const option = document.createElement('option');
+            option.value = kb.id;
+            option.textContent = "> 知识库：" + kb.name;
+            selectElement.appendChild(option);
+        });
+        
+    } catch (error) {
+        console.error('加载知识库失败:', error);
+        // 可以选择显示一个错误提示，但不影响主要功能
     }
 }
 
@@ -180,9 +316,9 @@ function renderHistory(historyData) {
                         if (response.ok) {
                             item.querySelector('.conversation-title').textContent = newTitle.trim();
                             
-                            if (appState.currentConversation === conversationId) {
-                                elements.chatTitle.textContent = newTitle.trim();
-                            }
+                            // if (appState.currentConversation === conversationId) {
+                            //     elements.chatTitle.textContent = newTitle.trim();
+                            // }
                         } else {
                             alert('重命名失败，请稍后再试');
                         }
@@ -215,7 +351,7 @@ function renderHistory(historyData) {
                             if (appState.currentConversation === conversationId) {
                                 appState.currentConversation = null;
                                 elements.chatMessages.innerHTML = '';
-                                elements.chatTitle.textContent = "遇事不决问通义";
+                                // elements.chatTitle.textContent = "遇事不决怎么办";
                             }
                         } else {
                             alert('删除失败，请稍后再试');
@@ -244,11 +380,18 @@ function renderHistory(historyData) {
 }
 
 // 加载对话内容
-async function loadConversation(conversationId) {
+async function loadConversation(conversationId, knowledgeBaseId = null) {
     appState.currentConversation = conversationId;
-    
     try {
-        const response = await fetch(`/api/conversation/${conversationId}`, {
+        // 构建查询参数
+        const params = new URLSearchParams();
+        if (knowledgeBaseId) {
+            params.append('knowledge_base_id', knowledgeBaseId);
+        }
+        
+        const url = `/api/conversation/${conversationId}${params.toString() ? `?${params.toString()}` : ''}`;
+
+        const response = await fetch(url, {
             method: 'GET',
             credentials: 'include'
         });
@@ -257,13 +400,30 @@ async function loadConversation(conversationId) {
             const conversationData = await response.json();
             renderConversation(conversationData);
             
-            elements.chatTitle.textContent = conversationData.title || "对话详情";
+            // elements.chatTitle.textContent = conversationData.title || "对话详情";
         } else {
             console.error('加载对话内容失败');
         }
     } catch (error) {
         console.error('加载对话内容时出错:', error);
-    }
+    }    
+    // try {
+    //     const response = await fetch(`/api/conversation/${conversationId}`, {
+    //         method: 'GET',
+    //         credentials: 'include'
+    //     });
+        
+    //     if (response.ok) {
+    //         const conversationData = await response.json();
+    //         renderConversation(conversationData);
+            
+    //         elements.chatTitle.textContent = conversationData.title || "对话详情";
+    //     } else {
+    //         console.error('加载对话内容失败');
+    //     }
+    // } catch (error) {
+    //     console.error('加载对话内容时出错:', error);
+    // }
 }
 
 // 渲染对话内容
@@ -299,9 +459,9 @@ function addMessageToChat(message, isRealtime = false) {
         <div class="message ${isUser ? 'user-message' : 'ai-message'}">
             <div class="message-header">
                 <div class="avatar ${isUser ? 'user-avatar-small' : 'ai-avatar'}" aria-label="${isUser ? '用户头像' : 'AI头像'}">
-                    ${isUser ? 'U' : 'O'}
+                    ${isUser ? 'U' : 'AI'}
                 </div>
-                <div class="sender-name">${isUser ? '用户' : '智能助手'}</div>
+                <div class="sender-name">${isUser ? '你' : '智能助手'}</div>
             </div>
             <div class="message-content">${content}</div>
             <div class="message-actions"></div>
@@ -311,7 +471,7 @@ function addMessageToChat(message, isRealtime = false) {
     elements.chatMessages.appendChild(messageContainer);
     
     // 如果是AI消息且是测试用例场景，添加导出按钮
-    if (!isUser && appState.currentScenario === '用例生成') {
+    if (!isUser && appState.currentScenario === 'testcase_generation') {
         // 存储原始内容以便导出
         messageContainer.dataset.raw = message.content;
         // addExportButton(messageContainer);
@@ -326,7 +486,7 @@ function addMessageToChat(message, isRealtime = false) {
         typeWriterEffect(contentElement, message.content, () => {
             scrollToBottom();
             // 在实时消息完成后，添加导出按钮
-            if (appState.currentScenario === '用例生成') {
+            if (appState.currentScenario === 'testcase_generation') {
                 messageContainer.dataset.raw = message.content;
                 addExportButton(messageContainer);
             }
@@ -345,7 +505,7 @@ function scrollToBottom() {
 function setupEventListeners() {
     // 场景切换
     document.querySelectorAll('.function-item').forEach(item => {
-        item.addEventListener('click', () => {
+        item.addEventListener('click', async () => {
             if (currentRequestController) {
                 currentRequestController.abort();
                 currentRequestController = null;
@@ -361,33 +521,59 @@ function setupEventListeners() {
             item.classList.add('active');
             
             // 更新当前场景
-            appState.currentScenario = item.dataset.scenario;
+            // appState.currentScenario = item.dataset.scenario;
+            const newScenario = item.dataset.scenario;
+            appState.currentScenario = newScenario;
             
+            // 根据当前选中的知识库加载新场景的历史记录
+            await loadHistory(newScenario, appState.currentKnowledgeBaseId);
+
             // 加载新场景的历史记录
-            loadHistory(appState.currentScenario);
+            // loadHistory(appState.currentScenario);
             
             // 重置当前对话
             appState.currentConversation = null;
-            elements.chatTitle.textContent = "有问题就会有答案";
+            // elements.chatTitle.textContent = "有问题就会有答案";
             
             // 清空聊天区域
             elements.chatMessages.innerHTML = '';
             // 添加场景特定的欢迎消息
-            const scenarioWelcome = {
-                "产品手册": `我是您的产品助手，专注于容灾备份产品领域。\n\n您可以询问我有关容灾备份产品的详细功能说明与操作指南。\n\n📌 例如：如何配置备份策略？`,
+            elements.chatMessages.innerHTML = `
+                <div class="message-container">
+                    <div class="message ai-message">
+                        <div class="message-content">
+                            <p>你好！欢迎使用AI智能测试平台。我可以帮你：</p>
+                            <p>- 梳理需求、设计测试策略、分析测试场景和测试点；</p>
+                            <p>- 根据知识库和你的需求帮你生成测试用例；</p>
+                            <p>- 排查产品问题、阅读用户手册等。</p>
+                            <p>你可以上传文档，创建和使用新的知识库。</p>
+                            <p>请选择左侧的功能场景，输入你的问题，让我们开始吧！</p>
+                        </div>
+                    </div>
+                </div>
+            `;            
+            // 添加场景特定的欢迎消息
+            // const welcomeMsg = {
+            //     role: "assistant",
+            //     content: getScenarioWelcomeMessage(newScenario)
+            // };
+            // addMessageToChat(welcomeMsg);
 
-                "运维助手": `我是您的智能运维助手，可以协助您处理服务器运维、故障排查和性能优化等问题。\n\n请告诉我您遇到的具体问题或需求，我将提供针对性的解决方案。\n\n📌 你可以这样问我：MySQL备份失败会是什么原因？`,
+            // const scenarioWelcome = {
+            //     "产品手册": `我是您的产品助手，专注于容灾备份产品领域。\n\n您可以询问我有关容灾备份产品的详细功能说明与操作指南。\n\n📌 例如：如何配置备份策略？`,
 
-                "需求挖掘": `本场景用于需求分析与挖掘，请描述您的业务背景或功能需求，我将协助您梳理系统需求并生成清晰的需求文档。\n\n📌 你可以这样问我：如何设计一个在线支付系统的需求？`,
+            //     "运维助手": `我是您的智能运维助手，可以协助您处理服务器运维、故障排查和性能优化等问题。\n\n请告诉我您遇到的具体问题或需求，我将提供针对性的解决方案。\n\n📌 你可以这样问我：MySQL备份失败会是什么原因？`,
 
-                "用例生成": `请输入您需要测试的功能描述，我将自动生成对应的测试用例，并支持导出 CSV 文件到 Excel 查看。\n\n📌 你可以这样问我：请根据用户登录功能生成测试用例。`
-            };
+            //     "需求挖掘": `本场景用于需求分析与挖掘，请描述您的业务背景或功能需求，我将协助您梳理系统需求并生成清晰的需求文档。\n\n📌 你可以这样问我：如何设计一个在线支付系统的需求？`,
 
-            const welcomeMsg = {
-                role: "assistant",
-                content: scenarioWelcome[appState.currentScenario] || "你好！我是你的智能助手"
-            };
-            addMessageToChat(welcomeMsg);
+            //     "用例生成": `请输入您需要测试的功能描述，我将自动生成对应的测试用例，并支持导出 CSV 文件到 Excel 查看。\n\n📌 你可以这样问我：请根据用户登录功能生成测试用例。`
+            // };
+
+            // const welcomeMsg = {
+            //     role: "assistant",
+            //     content: scenarioWelcome[appState.currentScenario] || "你好！我是你的智能助手"
+            // };
+            // addMessageToChat(welcomeMsg);
         });
     });
     
@@ -407,17 +593,33 @@ function setupEventListeners() {
         
         elements.chatMessages.innerHTML = '';
         
-        const welcomeMessage = {
-            role: "assistant",
-            content: "你好！我是智能助手，有什么可以帮您的吗？"
-        };
-        addMessageToChat(welcomeMessage);
-        
-        elements.chatTitle.textContent = "有问题就会有答案";
+        // const welcomeMessage = {
+        //     role: "assistant",
+        //     content: getScenarioWelcomeMessage(appState.currentScenario)
+        // };
+        // addMessageToChat(welcomeMessage);
+        elements.chatMessages.innerHTML = `
+            <div class="message-container">
+                <div class="message ai-message">
+                    <div class="message-content">
+                        <p>你好！欢迎使用AI智能测试平台。我可以帮你：</p>
+                        <p>- 梳理需求、设计测试策略、分析测试场景和测试点；</p>
+                        <p>- 根据知识库和你的需求帮你生成测试用例；</p>
+                        <p>- 排查产品问题、阅读用户手册等。</p>
+                        <p>你可以上传文档，创建和使用新的知识库。</p>
+                        <p>请选择左侧的功能场景，输入你的问题，让我们开始吧！</p>
+                    </div>
+                </div>
+            </div>
+        `;        
+        // elements.chatTitle.textContent = "有问题就会有答案";
         
         document.querySelectorAll('.conversation-item').forEach(el => {
             el.classList.remove('active');
         });
+
+        await loadHistory(appState.currentScenario, appState.currentKnowledgeBaseId);
+
     });
 
     const mobileMenuBtn = document.getElementById('mobileMenuBtn');
@@ -457,6 +659,17 @@ function setupEventListeners() {
     });
 }
 
+// 添加获取场景欢迎消息的辅助函数
+function getScenarioWelcomeMessage(scenario) {
+    const scenarioWelcome = {
+        "产品手册": `我是您的产品助手，专注于容灾备份产品领域。\n\n您可以询问我有关容灾备份产品的详细功能说明与操作指南。\n\n📌 例如：如何配置备份策略？`,
+        "运维助手": `我是您的智能运维助手，可以协助您处理服务器运维、故障排查和性能优化等问题。\n\n请告诉我您遇到的具体问题或需求，我将提供针对性的解决方案。\n\n📌 你可以这样问我：MySQL备份失败会是什么原因？`,
+        "需求挖掘": `本场景用于需求分析与挖掘，请描述您的业务背景或功能需求，我将协助您梳理系统需求并生成清晰的需求文档。\n\n📌 你可以这样问我：如何设计一个在线支付系统的需求？`,
+        "用例生成": `请输入您需要测试的功能描述，我将自动生成对应的测试用例，并支持导出 CSV 文件到 Excel 查看。\n\n📌 你可以这样问我：请根据用户登录功能生成测试用例。`
+    };
+    
+    return scenarioWelcome[scenario] || "你好！我是你的智能助手，我可以帮助你进行需求分析、测试用例生成、问题排查、文档查询等。请选择对应的场景，来开始我们的对话吧~~";
+}
 
 // 发送消息事件
 async function sendMessage() {
@@ -520,16 +733,24 @@ async function sendMessage() {
 
         currentRequestController = new AbortController();
 
+        // 构建请求体，包含知识库ID
+        const requestBody = {
+            message: message,
+            scenario: appState.currentScenario,
+            conversation_id: appState.currentConversation
+        };
+        
+        // 如果选择了知识库，添加到请求体中
+        if (appState.currentKnowledgeBaseId) {
+            requestBody.knowledge_base_id = appState.currentKnowledgeBaseId;
+        }
+
         const response = await fetch('/api/chat', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json'
             },
-            body: JSON.stringify({
-                message: message,
-                scenario: appState.currentScenario,
-                conversation_id: appState.currentConversation
-            }),
+            body: JSON.stringify(requestBody),
             signal: currentRequestController.signal
         });
         
@@ -580,7 +801,7 @@ async function sendMessage() {
                             if (currentMessageContainer) {
                                 currentMessageContainer.dataset.raw = aiResponse;
                                 // 检查是否是测试用例场景并且包含表格
-                                if (appState.currentScenario === '用例生成' && hasMarkdownTable(aiResponse)) {
+                                if (appState.currentScenario === 'testcase_generation' && hasMarkdownTable(aiResponse)) {
                                     addExportButton(currentMessageContainer);
                                 }
                             }
@@ -603,17 +824,18 @@ async function sendMessage() {
 
 
                 // 确保添加导出按钮（如果未在流中处理）
-        if (appState.currentScenario === '用例生成') {
+        if (appState.currentScenario === 'testcase_generation') {
             aiMessageContainer.dataset.raw = aiResponse;
             addExportButton(aiMessageContainer);
         }
 
         if (newConversationId) {
             appState.currentConversation = newConversationId;
-            elements.chatTitle.textContent = conversationTitle || "新对话";
+            // elements.chatTitle.textContent = conversationTitle || "新对话";
             
             // 刷新历史记录
-            await loadHistory(appState.currentScenario);
+            // await loadHistory(appState.currentScenario);
+            await loadHistory(appState.currentScenario, appState.currentKnowledgeBaseId);
         }
         
     } catch (error) {
@@ -637,7 +859,7 @@ async function sendMessage() {
         currentRequestController = null;
     }
 }
-
+// 创建AI正在输入的指示器
 function createTypingIndicator() {
     const container = document.createElement('div');
     container.className = 'message-container';
@@ -664,12 +886,6 @@ function createTypingIndicator() {
 function typeWriterEffect(messageElement, text, callback) {
     let i = 0;
     const speed = 20; // 打字速度（毫秒/字符）
-    
-    // 添加光标
-    // const cursor = document.createElement('span');
-    // cursor.className = 'typing-cursor';
-    // cursor.textContent = '|';
-    // messageElement.appendChild(cursor);
     
     function type() {
                 if (i < text.length) {
@@ -725,11 +941,6 @@ function addExportButton(messageContainer) {
 
 // 导出测试用例的函数
 function exportTestCases(messageContainer) {
-    // const conversationId = appState.currentConversation;
-    // if (!conversationId) {
-    //     alert('请先选择对话');
-    //     return;
-    // }
     // 从消息容器获取原始内容
     const rawContent = messageContainer.dataset.raw;
     if (!rawContent) {
@@ -757,15 +968,6 @@ function exportTestCases(messageContainer) {
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
-
-    // 触发下载
-    // const downloadUrl = `/api/export/testcases?conversation_id=${conversationId}`;
-    // const link = document.createElement('a');
-    // link.href = downloadUrl;
-    // link.download = `testcases_${conversationId}.csv`;
-    // document.body.appendChild(link);
-    // link.click();
-    // document.body.removeChild(link);
 }
 
 function hasMarkdownTable(text) {

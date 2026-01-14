@@ -7,3 +7,6 @@
 fastapi_venv/
 .venv/
 .env
+chroma_db/
+temp_uploads/
+uploads/

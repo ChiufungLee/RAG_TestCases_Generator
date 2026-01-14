@@ -5,20 +5,24 @@ from models.chat import Conversation, Message
 from sqlalchemy import desc
 from fastapi.responses import JSONResponse
 
+from models.knowledge_models import KnowledgeBase
+
 
 
 class ChatService:
     
     @staticmethod
-    async def get_conversation_groups(user_id: int, scenario: str, db: Session):
+    async def get_conversation_groups(user_id: int, scenario: str, knowledge_base_id: str, db: Session):
         # 获取用户的对话历史记录的逻辑
         
         today = datetime.now().date()
         three_days_ago = today - timedelta(days=3)
         one_week_ago = today - timedelta(days=7)
+        filter_condition = [Conversation.user_id == user_id, Conversation.scenario == scenario]
+        if knowledge_base_id:
+            filter_condition.append(Conversation.knowledge_base_id == knowledge_base_id)
         conversations = db.query(Conversation).filter(
-            Conversation.user_id == user_id,
-            Conversation.scenario == scenario
+            *filter_condition
         ).order_by(desc(Conversation.updated_at)).all()
         
         # 按时间分组
@@ -58,11 +62,18 @@ class ChatService:
         return groups
     
     @staticmethod
-    async def create_new_conversation(user_id: int, title: str, scenario: str, db: Session) -> Conversation:
+    async def create_new_conversation(user_id: int, title: str, scenario: str, knowledge_base_id: str, db: Session) -> Conversation:
+        # 如果提供了 knowledge_base_id，验证其存在性
+        if knowledge_base_id:
+            kb = db.query(KnowledgeBase).filter(KnowledgeBase.id == knowledge_base_id).first()
+            if not kb:
+                knowledge_base_id = None  # 设置为 None
+
         new_conversation = Conversation(
             user_id=user_id,
             title=title,
-            scenario=scenario
+            scenario=scenario,
+            knowledge_base_id=knowledge_base_id
         )
         db.add(new_conversation)
         db.commit()
@@ -85,11 +96,11 @@ class ChatService:
     async def get_conversation_history(conversation_id: int, db: Session):
         messages = db.query(Message).filter(
             Message.conversation_id == conversation_id
-        ).order_by(Message.timestamp).all()
+        ).order_by(Message.timestamp.asc()).limit(7).all()
         
         history = [
             {"role": msg.role, "content": msg.content, "timestamp": msg.timestamp.isoformat()}
-            for msg in messages
+            for msg in messages[:-1]
         ]
         
         return history

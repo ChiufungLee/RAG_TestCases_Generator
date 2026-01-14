@@ -122,7 +122,7 @@ async def save_ai_response(content, conversation_id, db: Session):
 async def generate_and_update_title(user_message: str, conversation_id: str, db: Session):
     """异步生成并更新对话标题"""
     try:
-        title_prompt = get_prompt("标题生成", question=user_message)
+        title_prompt = get_prompt(scenario="title_generation", question=user_message)
         # 注意：call_llm_model 现在是异步生成器
         title_tokens = []
         async for token in call_llm_model(title_prompt):

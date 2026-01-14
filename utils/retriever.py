@@ -2,10 +2,18 @@ import functools
 from threading import Lock
 import chromadb
 from typing import List, Dict, Any
+from fastapi import Depends
 from openai import OpenAI  
 from langchain_core.documents import Document
 from dotenv import load_dotenv
 import os
+from models.database import get_db
+from services import knowlege_service
+from sqlalchemy.orm import Session
+import logging
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 load_dotenv()
 ALIYUN_API_KEY = os.getenv("ALIYUN_API_KEY")
@@ -44,8 +52,8 @@ class ChromaRetriever:
         # 初始化 OpenAI 客户端
         # self.openai_client = OpenAI(api_key=openai_api_key)
         self.openai_client = OpenAI(
-            api_key=ALIYUN_API_KEY, 
-            base_url=ALIYUN_BASE_URL
+            api_key=os.getenv("ALIYUN_API_KEY"), 
+            base_url=os.getenv("ALIYUN_BASE_URL")
         )
 
         # 获取 Chroma 集合
@@ -104,14 +112,32 @@ class ChromaRetriever:
             **kwargs
         )
         return results
+    
+    @staticmethod
+    async def clear_retriever_cache(kb_id: str):
+        """清除指定知识库的检索器缓存"""
+        with _retriever_lock:
+            if kb_id in _retriever_cache:
+                del _retriever_cache[kb_id]
+                logger.info(f"已清除知识库 {kb_id} 的检索器缓存")
+                return True
+            return False
 
-# 用于保护检索器创建的线程锁
+    @staticmethod
+    async def clear_all_retriever_caches():
+        """清除所有检索器缓存"""
+        with _retriever_lock:
+            _retriever_cache.clear()
+            logger.info("已清除所有检索器缓存")
+
+# 缓存检索器
 _retriever_lock = Lock()
 _retriever_cache = {}
 
 @functools.lru_cache(maxsize=2)  # 最多缓存2个不同场景的检索器
 def _get_cached_chroma_client():
     """缓存的Chroma客户端单例（进程级别）"""
+    RAG_DB_PATH = os.getenv("RAG_DB_PATH", "./chroma_db")
     print(f"初始化Chroma客户端，路径: {RAG_DB_PATH}")
     return chromadb.PersistentClient(path=RAG_DB_PATH)
 
@@ -120,8 +146,8 @@ def _get_cached_chroma_client():
 def get_rag_retriever(scenario: str):
     """根据场景获取对应的RAG检索器（优化后）"""
     COLLECTION_MAP = {  # 常量用大写
-        "运维助手": "devops_tool",
-        "产品手册": "product_manual"
+        "devops_tool": "devops_tool",
+        "product_manual": "product_manual"
     }
     
     if scenario not in COLLECTION_MAP:
@@ -154,3 +180,52 @@ def get_rag_retriever(scenario: str):
             import logging
             logging.error(f"创建 {scenario} 场景检索器失败: {e}", exc_info=True)
             return None
+        
+async def get_rag_retriever_by_kb(kb_id: str = "", db: Session = Depends(get_db)):
+    """根据知识库ID获取检索器"""
+
+    # 检查缓存
+    with _retriever_lock:
+        if kb_id in _retriever_cache:
+            logger.info(f"从缓存获取知识库 {kb_id} 的检索器")
+            return _retriever_cache[kb_id]
+
+    # 获取知识库信息    
+    try:
+        # kb = db.query(KnowledgeBase).filter(KnowledgeBase.id == kb_id).first()
+        kb = await knowlege_service.get_knowledge_base_by_id(db=db, kb_id=kb_id)
+        if not kb:
+            return None
+        
+        collection_name = kb.collection_name
+        
+        # 获取 ChromaDB 客户端
+        chroma_client = _get_cached_chroma_client()
+        
+        # 检查集合是否存在
+        try:
+            # 尝试获取集合，如果不存在会抛出异常
+            collection = chroma_client.get_collection(name=collection_name)
+            logger.info(f"知识库 {kb_id} 的向量集合存在，包含 {collection.count()} 个向量")
+        except Exception as e:
+            logger.error(f"知识库 {kb_id} 的向量集合不存在: {e}")
+            return None
+        
+        # 创建检索器
+        retriever = ChromaRetriever(
+            collection_name=collection_name,
+            chroma_client=chroma_client,
+            model_name="text-embedding-v4"
+        )
+                
+        # 存入缓存
+        with _retriever_lock:
+            _retriever_cache[kb_id] = retriever
+        
+        logger.info(f"已为知识库 {kb_id} 创建检索器，集合名称: {collection_name}")
+        return retriever
+    except Exception as e:
+        import logging
+        logging.error(f"创建知识库 {kb_id} 的检索器失败: {e}", exc_info=True)
+        return None
+    

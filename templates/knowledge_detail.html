@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>知识库详情 - 智能助手</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="/static/kb_detail.css">
+</head>
+<body>
+    <div class="app-container">
+        <!-- 移动端菜单按钮 -->
+        <button class="mobile-menu-btn" id="mobileMenuBtn" aria-label="打开菜单">
+            <i class="fas fa-bars"></i>
+        </button>
+
+        <!-- 左侧导航栏 -->
+        <aside class="sidebar" aria-label="系统导航">
+            <div class="sidebar-header">
+                <img src="/static/images/AI_Test_Logo.png" width="200" alt="应用程序标志" class="app-logo">
+                <button class="new-chat-btn" aria-label="新建对话" id="newChatBtn">
+                    <a href="/chat">
+                        <i class="fas fa-plus"></i> 新建对话
+                    </a>
+                </button>
+            </div>
+            
+            <div class="function-menu">
+                <div class="active">
+                    <i class="fas fa-database"></i>
+                    <p><a href="/api/v1/func/func_main" style="text-decoration: none; color: inherit;">知识库管理</a></p>
+                </div>
+                <div>
+                    <i class="fas fa-file-alt"></i>
+                    <p>关于此项目</p>
+                </div>
+                <!-- <div>
+                    <i class="fas fa-vial"></i>
+                    <p>测试用例管理</p>
+                </div> -->
+            </div>
+            
+        </aside>
+        
+        <!-- 右侧主内容区 -->
+        <main class="main-content">
+            <!-- 知识库详情头部 -->
+            <div class="kb-detail-header">
+                <div class="kb-header-info">
+                    <div class="kb-icon-large" id="kbIcon">
+                        <i class="fas fa-database"></i>
+                    </div>
+                    <div class="kb-title-section">
+                        <h1 id="kbName">加载中...</h1>
+                        <p class="kb-description" id="kbDescription"></p>
+                        <div class="kb-stats">
+                            <div class="stat-item">
+                                <div class="stat-value" id="fileCount">0</div>
+                                <div class="stat-label">文档数量</div>
+                            </div>
+                            <div class="stat-item">
+                                <div class="stat-value" id="chunkCount">0</div>
+                                <div class="stat-label">向量片段</div>
+                            </div>
+                            <div class="stat-item">
+                                <div class="stat-value" id="createdDate">-</div>
+                                <div class="stat-label">创建时间</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <button class="back-btn" id="backBtn">
+                    <i class="fas fa-arrow-left"></i> 返回列表
+                </button>
+            </div>
+
+                        <!-- 文件列表区域 -->
+            <div class="files-section">
+                <div class="files-header">
+                    <h2 class="section-title">
+                        <i class="fas fa-file-alt"></i> 文档列表
+                    </h2>
+                    <div class="files-count">
+                        共 <span id="filesCount">0</span> 个文档
+                    </div>
+                </div>
+                
+                <div id="filesListContainer">
+                    <!-- 加载状态 -->
+                    <div class="loading-state" id="loadingState">
+                        <i class="fas fa-spinner fa-spin"></i>
+                        <p>加载文档列表...</p>
+                    </div>
+                    
+                    <!-- 空状态 -->
+                    <div class="empty-state" id="emptyFilesState" style="display: none;">
+                        <i class="fas fa-folder-open"></i>
+                        <h3>暂无文档</h3>
+                        <p>上传您的第一个文档</p>
+                    </div>
+                    
+                    <!-- 文件表格 -->
+                    <table class="files-table" id="filesTable" style="display: none;">
+                        <thead>
+                            <tr>
+                                <th>文件名</th>
+                                <th>大小</th>
+                                <th>状态</th>
+                                <th>处理时间</th>
+                                <th>操作</th>
+                            </tr>
+                        </thead>
+                        <tbody id="filesTableBody">
+                            <!-- 文件行将通过JS动态生成 -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- 文件上传区域 -->
+            <div class="upload-section">
+                <h2 class="section-title">
+                    <i class="fas fa-cloud-upload-alt"></i> 上传文档
+                </h2>
+                
+                <!-- 文件上传区域 -->
+                <div class="upload-area" id="uploadArea">
+                    <i class="fas fa-cloud-upload-alt"></i>
+                    <h3>拖放文件到此处或点击选择文件</h3>
+                    <p>支持 PDF 格式，单个文件大小不超过 50MB</p>
+                    <button class="upload-btn" id="selectFileBtn">
+                        <i class="fas fa-folder-open"></i> 选择文件
+                    </button>
+                    <input type="file" class="file-input" id="fileInput" accept=".pdf" multiple>
+                </div>
+                
+                <!-- 上传进度显示 -->
+                <div class="upload-progress" id="uploadProgress">
+                    <div class="progress-header">
+                        <span class="progress-filename" id="progressFilename">文件名.pdf</span>
+                        <span class="progress-percent" id="progressPercent">0%</span>
+                    </div>
+                    <div class="progress-bar">
+                        <div class="progress-fill" id="progressFill"></div>
+                    </div>
+                    <div class="upload-status processing" id="uploadStatus">
+                        <i class="fas fa-spinner fa-spin"></i> <span>正在上传...</span>
+                    </div>
+                </div>
+            </div>
+            
+
+            <footer class="footer-note">
+                <p>你可以在 <a href="https://github.com/ChiufungLee/FastAPI_Local_RAG" class="email-link">GitHub</a> 上查看本项目代码</p>
+            </footer>
+        </main>
+    </div>
+
+    <script src="/static/kb_detail.js"></script>
+</body>
+</html>

@@ -3,96 +3,240 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>用户注册</title>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <link rel="stylesheet" href="/static/style.css">
+    <title>注册 - 基金管理后台</title>
+    <link rel="stylesheet" href="app.css">
+    <style>
+        * {
+            margin: 0;
+        }
+        /* 注册页面特定样式 */
+        .register-container {
+            display: flex;
+            min-height: 100vh;
+            background: linear-gradient(135deg, #4299e1 0%, #3182ce 100%);
+        }
+        
+        .register-left {
+            flex: 1;
+            display: none;
+        }
+        
+        .register-right {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            padding: 40px;
+            background: white;
+        }
+        
+        .register-form-container {
+            width: 100%;
+            max-width: 450px;
+        }
+        
+        .register-logo {
+            text-align: center;
+            margin-bottom: 40px;
+        }
+        
+        .register-logo h1 {
+            color: #333;
+            margin-bottom: 10px;
+        }
+        
+        .register-logo p {
+            color: #666;
+        }
+        
+        .register-form {
+            background: #f8f9fa;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+        
+        .form-group {
+            margin-bottom: 20px;
+        }
+        
+        .form-group label {
+            display: block;
+            margin-bottom: 8px;
+            color: #555;
+            font-weight: 500;
+        }
+        
+        .form-group input {
+            width: 90%;
+            padding: 12px 15px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            font-size: 16px;
+            transition: border-color 0.3s;
+        }
+        
+        .form-group input:focus {
+            outline: none;
+            border-color: #4299e1;
+            box-shadow: 0 0 0 3px rgba(66, 153, 225, 0.1);
+        }
+        
+        .password-requirements {
+            font-size: 12px;
+            color: #666;
+            margin-top: 5px;
+        }
+        
+        .register-btn {
+            width: 100%;
+            padding: 12px;
+            background: #4299e1;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            font-size: 16px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: background-color 0.3s;
+        }
+        
+        .register-btn:hover {
+            background: #3182ce;
+        }
+        
+        .register-btn:disabled {
+            background: #a0aec0;
+            cursor: not-allowed;
+        }
+        
+        .register-footer {
+            text-align: center;
+            margin-top: 20px;
+            color: #666;
+        }
+        
+        .register-footer a {
+            color: #4299e1;
+            text-decoration: none;
+            margin-left: 5px;
+        }
+        
+        .register-footer a:hover {
+            text-decoration: underline;
+        }
+        
+        .error-message {
+            color: #e53e3e;
+            background: #fed7d7;
+            padding: 10px;
+            border-radius: 5px;
+            margin-bottom: 20px;
+            display: none;
+        }
+        
+        .success-message {
+            color: #38a169;
+            background: #c6f6d5;
+            padding: 10px;
+            border-radius: 5px;
+            margin-bottom: 20px;
+            display: none;
+        }
+        
+        .form-row {
+            display: flex;
+            gap: 15px;
+        }
+        
+        .form-row .form-group {
+            flex: 1;
+        }
+        
+        .red {
+            color: red;
+        }
+        @media (min-width: 768px) {
+            .register-left {
+                display: flex;
+                flex-direction: column;
+                justify-content: center;
+                align-items: center;
+                color: white;
+                padding: 40px;
+            }
+            
+            .register-left h2 {
+                font-size: 2.5rem;
+                margin-bottom: 20px;
+            }
+            
+            .register-left p {
+                font-size: 1.2rem;
+                opacity: 0.9;
+            }
+        }
+    </style>
 </head>
 <body>
-    <div class="login-container">
-        <h2>用户注册</h2>
-        
-        <!-- 错误信息区域 -->
-         {% if error %}
-        <div class="error-message">
-            <i class="fas fa-exclamation-circle"></i>
-            <div>{{ error }}</div>
+    <div class="register-container">
+        <!-- 左侧装饰区域 -->
+        <div class="register-left">
+            <h2>接入智能测试平台</h2>
+            <p>开始您的智能测试之旅</p>
+            <p>专业工具，轻松管理</p>
         </div>
-        {% endif %}
         
-        <form method="post" action="/register">
-            <div class="form-group">
-                <label for="username">用户名</label>
-                <i class="fas fa-user input-icon"></i>
-                <input type="text" id="username" name="username" required placeholder="请输入用户名">
+        <!-- 右侧注册区域 -->
+        <div class="register-right">
+            <div class="register-form-container">
+                <div class="register-logo">
+                    <h1>创建账户</h1>
+                    <p>请填写注册信息</p>
+                </div>
+                
+                <!-- 错误消息 -->
+                <div id="errorMessage" class="error-message"></div>
+                
+                <!-- 成功消息 -->
+                <div id="successMessage" class="success-message"></div>
+                
+                <form id="registerForm" class="register-form">
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="username">用户名 <span class="red">*</span></label>
+                            <input type="text" id="username" name="username" required placeholder="请输入用户名">
+                        </div>
+                        
+                        <!-- <div class="form-group">
+                            <label for="email">邮箱 <span class="red">*</span></label>
+                            <input type="email" id="email" name="email" placeholder="请输入邮箱">
+                        </div> -->
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="password">密码 <span class="red">*</span></label>
+                        <input type="password" id="password" name="password" required placeholder="请输入最少6位密码">
+                        <div class="password-requirements">建议使用至少6位字符，包含字母和数字</div>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="confirmPassword">确认密码 <span class="red">*</span></label>
+                        <input type="password" id="confirmPassword" name="confirmPassword" required placeholder="请再次输入密码">
+                    </div>
+                    
+                    <button type="submit" id="registerButton" class="register-btn">注册</button>
+                    
+                    <div class="register-footer">
+                        已有账户？
+                        <a href="/login">立即登录</a>
+                    </div>
+                </form>
             </div>
-            
-            <div class="form-group">
-                <label for="password">密码</label>
-                <i class="fas fa-lock input-icon"></i>
-                <input type="password" id="password" name="password" required placeholder="请输入密码">
-            </div>
-            
-            <div class="form-group">
-                <label for="re_password">确认密码</label>
-                <i class="fas fa-lock input-icon"></i>
-                <input type="password" id="re_password" name="re_password" required placeholder="请确认密码">
-            </div>
-
-            <button type="submit">
-                <i class="fas fa-sign-in-alt"></i> 注 册
-            </button>
-        </form>
-        
-        <a href="/login" class="register-link">已有账号？去登录</a>
-        
-        <div class="footer">
-            <p>© 2025 联系 <a href="mailto:lzfdd937@163.com" class="email-link">lzfdd937@163.com</a></p>
         </div>
     </div>
-<script>
-document.addEventListener('DOMContentLoaded', function () {
-    const form = document.querySelector('form');
-    const password = document.getElementById('password');
-    const rePassword = document.getElementById('re_password');
 
-    // 创建错误提示元素
-    const errorDiv = document.createElement('div');
-    errorDiv.id = 'password-error';
-    errorDiv.className = 'error-message';
-    errorDiv.style.display = 'none';
-    errorDiv.innerHTML = `
-        <i class="fas fa-exclamation-circle"></i>
-        <div>两次输入的密码不一致</div>
-    `;
-
-    // 将错误提示插入到确认密码输入框下方
-    const formGroup = rePassword.parentNode;
-    formGroup.appendChild(errorDiv);
-
-    // 表单提交事件监听
-    form.addEventListener('submit', function (event) {
-        const pass = password.value.trim();
-        const rePass = rePassword.value.trim();
-
-        if (pass !== rePass) {
-            errorDiv.style.display = 'block';
-            event.preventDefault(); // 阻止表单提交
-        } else {
-            errorDiv.style.display = 'none'; // 隐藏错误提示
-        }
-    });
-
-    // 实时验证（可选，提升用户体验）
-    rePassword.addEventListener('input', function () {
-        const pass = password.value.trim();
-        const rePass = rePassword.value.trim();
-        if (pass !== rePass) {
-            errorDiv.style.display = 'block';
-        } else {
-            errorDiv.style.display = 'none';
-        }
-    });
-});
-</script>
+    <script src="/static/register.js"></script>
 </body>
 </html>

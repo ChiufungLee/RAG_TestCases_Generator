@@ -4,6 +4,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy.orm import Session
 from models.database import get_db
 from fastapi import APIRouter, Request, Form, Depends, status
+from schemas.user_schemas import UserCreate, UserLogin
 from services.auth_service import AuthService
 
 router = APIRouter()
@@ -18,15 +19,16 @@ async def register_page(request: Request):
 @router.post("/register")
 async def register_user(
         request: Request,
-        username: str = Form(...),
-        password: str = Form(...),
+        # username: str = Form(...),
+        # password: str = Form(...),
+        user_data: UserCreate,
         db: Session = Depends(get_db)
     ):
 
-    register_result = await AuthService.create_user(db, username, password)
+    register_result = await AuthService.create_user(db, user_data.username, user_data.password)
     if not register_result["success"]:
         return templates.TemplateResponse(
-            "register.html", 
+            "register-new.html", 
             {"request": request, "error": register_result["error"]},
             status_code=status.HTTP_400_BAD_REQUEST
         )
@@ -50,13 +52,12 @@ async def main_page(request: Request):
 @router.post("/login")
 async def login_user(
         request: Request,
-        username: str = Form(...),
-        password: str = Form(...),
+        user_data: UserLogin,
         db: Session = Depends(get_db)
 ):
 
     # db_user = db.query(User).filter(User.username == username).first()
-    auth_result = await AuthService.login_user(db, username, password)
+    auth_result = await AuthService.login_user(db, user_data.username, user_data.password)
     if not auth_result["success"]:
         # raise HTTPException(status_code=401, detail="Invalid credentials",)
         return templates.TemplateResponse(
