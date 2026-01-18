@@ -164,3 +164,10 @@ class ChatService:
             Message.role == "assistant"
         ).all()
         return ai_messages
+
+    @staticmethod
+    async def get_conversation_info(conversation_id: str, db: Session):
+        conversation = db.query(Conversation).filter(
+            Conversation.id == conversation_id,
+        ).first()
+        return conversation

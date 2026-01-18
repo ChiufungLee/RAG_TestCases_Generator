@@ -110,6 +110,9 @@ body {
     color: var(--text-tertiary);
 }
 
+/* .guide-text {
+    display: none;
+} */
 .search-icon {
     position: absolute;
     left: 14px;
@@ -271,6 +274,10 @@ body {
 .message-container {
     max-width: 850px;
     margin: 0 auto 24px;
+}
+
+.message-container.hidden {
+    display: none;
 }
 
 .message {

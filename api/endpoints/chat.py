@@ -7,7 +7,7 @@ from services.chat_service import ChatService
 from sqlalchemy.orm import Session
 from models.database import get_db
 from utils.data_handle import convert_table_to_csv, extract_table_from_markdown
-from utils.llm_handle import generate_response
+from utils.llm_handle import generate_response, generate_and_update_title
 from utils.retriever import get_rag_retriever, get_rag_retriever_by_kb
 import logging
 
@@ -31,7 +31,6 @@ async def get_history(request: Request, scenario: str, knowledge_base_id: str, d
     user_id = request.session.get("user_id")
     if not user_id:
         return JSONResponse(status_code=401, content={"error": "未登录"})
-    print(f"获取对话分组，用户ID：{user_id}，场景：{scenario}，知识库ID：{knowledge_base_id}")
     conversation_groups = await ChatService.get_conversation_groups(user_id, scenario, knowledge_base_id, db)
     return {"groups": conversation_groups}
 
@@ -69,7 +68,8 @@ async def create_new_conversation(
     if not user_id:
         return JSONResponse(status_code=401, content={"error": "未登录"})
     
-    new_conversation = await ChatService.create_new_conversation(user_id, scenario, knowledge_base_id, db)
+    title = '新对话'
+    new_conversation = await ChatService.create_new_conversation(user_id = user_id, title = title, scenario = scenario, knowledge_base_id = knowledge_base_id, db = db)
     
     return {
         "conversation_id": new_conversation.id,
@@ -93,11 +93,17 @@ async def chat_endpoint(
     knowledge_base_id = data.get("knowledge_base_id")
     
     is_new_conversation = False
-    if not conversation_id:
-        new_conversation = await ChatService.create_new_conversation(user_id, scenario, scenario, knowledge_base_id, db)
-        conversation_id = new_conversation.id
-        is_new_conversation = True
+    # if not conversation_id:
+    #     new_conversation = await ChatService.create_new_conversation(user_id, scenario, scenario, knowledge_base_id, db)
+    #     conversation_id = new_conversation.id
+    #     is_new_conversation = True
     
+    conversation = await ChatService.get_conversation_info(conversation_id,db)
+    print(f"conversation{conversation.title}")
+    if conversation.title == "新对话":
+        is_new_conversation = True
+        generate_and_update_title(user_message=message, conversation_id=conversation_id, db=db)
+        print(f"conversation{conversation}")
     await ChatService.create_new_message(conversation_id, "user", message, db)
 
     
@@ -122,7 +128,7 @@ async def chat_endpoint(
         knowledge_base_name = "无"
     else:
         knowledge_base_name = knowledge_base.name
-        
+
     # 生成对话提示
     prompt = get_prompt(
         scenario,

@@ -3,9 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>知识库管理系统</title>
+    <title>AI智能测试平台</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <link rel="stylesheet" href="/static/func_lib.css">
+    <link rel="stylesheet" href="/static/css/func_lib.css">
 </head>
 <body>
     <div class="app-container">
@@ -17,7 +17,7 @@
         <!-- 左侧导航栏 -->
         <aside class="sidebar" aria-label="系统导航">
             <div class="sidebar-header">
-                <img src="/static/images/AI_Test_Logo.png" width="200" alt="应用程序标志" class="app-logo">
+                <img src="/static/images/AI_Test_Logo.png" width="200" alt="logo" class="app-logo">
                 <button class="new-chat-btn" aria-label="新建对话" id="newChatBtn">
                     <a href="/chat">
                         <i class="fas fa-plus"></i> 新建对话
@@ -28,7 +28,7 @@
             <div class="function-menu">
                 <div class="active">
                     <i class="fas fa-database"></i>
-                    <p>知识库管理</p>
+                    <p><a href="/api/v1/func/func_main" style="text-decoration: none; color: inherit;">知识库管理</a></p>
                 </div>
                 <div onclick="showAboutModal()">
                     <i class="fas fa-vial"></i>
@@ -118,6 +118,6 @@
         </div>
     </div>
 
-    <script src="/static/func_lib.js"></script>
+    <script src="/static/js/func_lib.js"></script>
 </body>
 </html>

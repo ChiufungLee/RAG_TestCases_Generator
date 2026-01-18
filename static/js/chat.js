@@ -57,7 +57,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         const selectedKbId = this.value;
         // 更新应用状态
         appState.currentKnowledgeBaseId = selectedKbId;
-        
+        appState.currentConversation = null;
         // 刷新历史记录
         await loadHistory(appState.currentScenario, selectedKbId);
         
@@ -68,7 +68,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             // 如果没有当前对话，清空聊天区域并显示欢迎消息
             elements.chatMessages.innerHTML = '';
             elements.chatMessages.innerHTML = `
-                <div class="message-container">
+                <div class="message-container guide-text">
                     <div class="message ai-message">
                         <div class="message-content">
                             <p>你好！欢迎使用AI智能测试平台。我可以帮你：</p>
@@ -395,10 +395,34 @@ async function loadConversation(conversationId, knowledgeBaseId = null) {
             method: 'GET',
             credentials: 'include'
         });
-        
+        console.log(response);
         if (response.ok) {
             const conversationData = await response.json();
-            renderConversation(conversationData);
+
+            // 检查返回的数据结构
+            if (Array.isArray(conversationData.messages)) {
+                // 正常情况：messages 是数组
+                renderConversation(conversationData);
+            } else {
+                console.error("对话不存在或出错:", conversationData.messages);
+                elements.chatMessages.innerHTML = '';
+                // 添加场景特定的欢迎消息
+                elements.chatMessages.innerHTML = `
+                    <div class="message-container guide-text">
+                        <div class="message ai-message">
+                            <div class="message-content">
+                                <p>你好！欢迎使用AI智能测试平台。我可以帮你：</p>
+                                <p>- 梳理需求、设计测试策略、分析测试场景和测试点；</p>
+                                <p>- 根据知识库和你的需求帮你生成测试用例；</p>
+                                <p>- 排查产品问题、阅读用户手册等。</p>
+                                <p>你可以上传文档，创建和使用新的知识库。</p>
+                                <p>请选择左侧的功能场景，输入你的问题，让我们开始吧！</p>
+                            </div>
+                        </div>
+                    </div>
+                `;   
+            }
+            
             
             // elements.chatTitle.textContent = conversationData.title || "对话详情";
         } else {
@@ -525,9 +549,6 @@ function setupEventListeners() {
             const newScenario = item.dataset.scenario;
             appState.currentScenario = newScenario;
             
-            // 根据当前选中的知识库加载新场景的历史记录
-            await loadHistory(newScenario, appState.currentKnowledgeBaseId);
-
             // 加载新场景的历史记录
             // loadHistory(appState.currentScenario);
             
@@ -539,7 +560,7 @@ function setupEventListeners() {
             elements.chatMessages.innerHTML = '';
             // 添加场景特定的欢迎消息
             elements.chatMessages.innerHTML = `
-                <div class="message-container">
+                <div class="message-container guide-text">
                     <div class="message ai-message">
                         <div class="message-content">
                             <p>你好！欢迎使用AI智能测试平台。我可以帮你：</p>
@@ -552,28 +573,9 @@ function setupEventListeners() {
                     </div>
                 </div>
             `;            
-            // 添加场景特定的欢迎消息
-            // const welcomeMsg = {
-            //     role: "assistant",
-            //     content: getScenarioWelcomeMessage(newScenario)
-            // };
-            // addMessageToChat(welcomeMsg);
+            // 根据当前选中的知识库加载新场景的历史记录
+            await loadHistory(newScenario, appState.currentKnowledgeBaseId);
 
-            // const scenarioWelcome = {
-            //     "产品手册": `我是您的产品助手，专注于容灾备份产品领域。\n\n您可以询问我有关容灾备份产品的详细功能说明与操作指南。\n\n📌 例如：如何配置备份策略？`,
-
-            //     "运维助手": `我是您的智能运维助手，可以协助您处理服务器运维、故障排查和性能优化等问题。\n\n请告诉我您遇到的具体问题或需求，我将提供针对性的解决方案。\n\n📌 你可以这样问我：MySQL备份失败会是什么原因？`,
-
-            //     "需求挖掘": `本场景用于需求分析与挖掘，请描述您的业务背景或功能需求，我将协助您梳理系统需求并生成清晰的需求文档。\n\n📌 你可以这样问我：如何设计一个在线支付系统的需求？`,
-
-            //     "用例生成": `请输入您需要测试的功能描述，我将自动生成对应的测试用例，并支持导出 CSV 文件到 Excel 查看。\n\n📌 你可以这样问我：请根据用户登录功能生成测试用例。`
-            // };
-
-            // const welcomeMsg = {
-            //     role: "assistant",
-            //     content: scenarioWelcome[appState.currentScenario] || "你好！我是你的智能助手"
-            // };
-            // addMessageToChat(welcomeMsg);
         });
     });
     
@@ -589,36 +591,60 @@ function setupEventListeners() {
     });
     
     elements.newChatBtn.addEventListener('click', async () => {
-        appState.currentConversation = null;
-        
-        elements.chatMessages.innerHTML = '';
-        
-        // const welcomeMessage = {
-        //     role: "assistant",
-        //     content: getScenarioWelcomeMessage(appState.currentScenario)
-        // };
-        // addMessageToChat(welcomeMessage);
-        elements.chatMessages.innerHTML = `
-            <div class="message-container">
-                <div class="message ai-message">
-                    <div class="message-content">
-                        <p>你好！欢迎使用AI智能测试平台。我可以帮你：</p>
-                        <p>- 梳理需求、设计测试策略、分析测试场景和测试点；</p>
-                        <p>- 根据知识库和你的需求帮你生成测试用例；</p>
-                        <p>- 排查产品问题、阅读用户手册等。</p>
-                        <p>你可以上传文档，创建和使用新的知识库。</p>
-                        <p>请选择左侧的功能场景，输入你的问题，让我们开始吧！</p>
+        try {
+            // 创建新对话
+            const formData = new FormData();
+            formData.append('scenario', appState.currentScenario);
+            if (appState.currentKnowledgeBaseId) {
+                formData.append('knowledge_base_id', appState.currentKnowledgeBaseId);
+            }
+            console.log(formData)
+            const response = await fetch('/api/conversation/new', {
+                method: 'POST',
+                credentials: 'include',
+                body: formData
+            });
+            
+            if (response.ok) {
+                const data = await response.json();
+                appState.currentConversation = data.conversation_id;
+                
+            elements.chatMessages.innerHTML = `
+                <div class="message-container guide-text">
+                    <div class="message ai-message">
+                        <div class="message-content">
+                            <p>你好！欢迎使用AI智能测试平台。我可以帮你：</p>
+                            <p>- 梳理需求、设计测试策略、分析测试场景和测试点；</p>
+                            <p>- 根据知识库和你的需求帮你生成测试用例；</p>
+                            <p>- 排查产品问题、阅读用户手册等。</p>
+                            <p>你可以上传文档，创建和使用新的知识库。</p>
+                            <p>请选择左侧的功能场景，输入你的问题，让我们开始吧！</p>
+                        </div>
                     </div>
                 </div>
-            </div>
-        `;        
-        // elements.chatTitle.textContent = "有问题就会有答案";
-        
-        document.querySelectorAll('.conversation-item').forEach(el => {
-            el.classList.remove('active');
-        });
-
-        await loadHistory(appState.currentScenario, appState.currentKnowledgeBaseId);
+            `;  
+                
+                // 刷新历史记录
+                await loadHistory(appState.currentScenario, appState.currentKnowledgeBaseId);
+                
+                // 高亮显示当前新建的对话
+                setTimeout(() => {
+                    document.querySelectorAll('.conversation-item').forEach(el => {
+                        el.classList.remove('active');
+                        if (el.dataset.id === appState.currentConversation) {
+                            el.classList.add('active');
+                        }
+                    });
+                }, 300); // 等待历史记录加载完成
+            } else {
+                throw new Error('创建新对话失败');
+            }
+        } catch (error) {
+            console.error('创建新对话时出错:', error);
+            // 如果创建失败，保持当前对话为null，但用户输入时仍会创建新对话
+            appState.currentConversation = null;
+            alert('创建新对话失败，请稍后再试');
+        }
 
     });
 
@@ -702,6 +728,46 @@ async function sendMessage() {
     scrollToBottom();
     
     try {
+
+        // 如果当前没有对话，先创建一个新对话
+        if (!appState.currentConversation) {
+            try {
+                const formData = new FormData();
+                formData.append('scenario', appState.currentScenario);
+                if (appState.currentKnowledgeBaseId) {
+                    formData.append('knowledge_base_id', appState.currentKnowledgeBaseId);
+                }
+                
+                const createResponse = await fetch('/api/conversation/new', {
+                    method: 'POST',
+                    credentials: 'include',
+                    body: formData
+                });
+                
+                if (createResponse.ok) {
+                    const data = await createResponse.json();
+                    appState.currentConversation = data.conversation_id;
+                } else {
+                    throw new Error('创建对话失败');
+                }
+            } catch (createError) {
+                console.error('创建对话时出错:', createError);
+                throw new Error('无法创建新对话');
+            }
+        }
+        
+        // 构建请求体，包含对话ID
+        const requestBody = {
+            message: message,
+            scenario: appState.currentScenario,
+            conversation_id: appState.currentConversation
+        };
+        
+        const guide_text = document.querySelector('.guide-text');
+        if (guide_text) {
+        guide_text.classList.add("hidden");
+        }
+
         // 创建AI消息容器（用于流式内容）
         const aiMessageContainer = document.createElement('div');
         aiMessageContainer.className = 'message-container';
@@ -734,11 +800,11 @@ async function sendMessage() {
         currentRequestController = new AbortController();
 
         // 构建请求体，包含知识库ID
-        const requestBody = {
-            message: message,
-            scenario: appState.currentScenario,
-            conversation_id: appState.currentConversation
-        };
+        // const requestBody = {
+        //     message: message,
+        //     scenario: appState.currentScenario,
+        //     conversation_id: appState.currentConversation
+        // };
         
         // 如果选择了知识库，添加到请求体中
         if (appState.currentKnowledgeBaseId) {
