@@ -21,7 +21,7 @@
 - 基于语义相似度的上下文检索
 - 检索增强的问答生成
 
-## 待实现功能 Todo List
+## Todo List
 
 在开发此系统时，意识到当前所做的功能仍有很大的优化空间，因此在此列个 Todo List，后续有时间会继续完善。
 
@@ -55,7 +55,7 @@
 
 - 知识库详情/文档管理页面
 
-  ![alt text](static/images/image-3.png)
+  ![alt text](static/images/image-1.png)
 
 ## 技术栈
 
