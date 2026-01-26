@@ -19,6 +19,21 @@ const elements = {
     // chatTitle: document.getElementById('chatTitle')
 };
 
+const tipsText = `
+    <div class="message-container guide-text">
+        <div class="message ai-message">
+            <div class="message-content">
+                <p>你好！欢迎使用AI智能测试平台。我可以帮你：</p>
+                <p>- 梳理需求、设计测试策略、分析测试场景和测试点；</p>
+                <p>- 根据知识库和你的需求帮你生成测试用例；</p>
+                <p>- 排查产品问题、阅读用户手册等。</p>
+                <p>你可以上传文档，创建和使用新的知识库。</p>
+                <p>请选择左侧的功能场景，输入你的问题，让我们开始吧！</p>
+            </div>
+        </div>
+    </div>
+`; 
+
 // 初始化应用
 document.addEventListener('DOMContentLoaded', async () => {
 
@@ -67,26 +82,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         } else {
             // 如果没有当前对话，清空聊天区域并显示欢迎消息
             elements.chatMessages.innerHTML = '';
-            elements.chatMessages.innerHTML = `
-                <div class="message-container guide-text">
-                    <div class="message ai-message">
-                        <div class="message-content">
-                            <p>你好！欢迎使用AI智能测试平台。我可以帮你：</p>
-                            <p>- 梳理需求、设计测试策略、分析测试场景和测试点；</p>
-                            <p>- 根据知识库和你的需求帮你生成测试用例；</p>
-                            <p>- 排查产品问题、阅读用户手册等。</p>
-                            <p>你可以上传文档，创建和使用新的知识库。</p>
-                            <p>请选择左侧的功能场景，输入你的问题，让我们开始吧！</p>
-                        </div>
-                    </div>
-                </div>
-            `;  
-            // const scenarioWelcome = getScenarioWelcomeMessage(appState.currentScenario);
-            // const welcomeMsg = {
-            //     role: "assistant",
-            //     content: scenarioWelcome
-            // };
-            // addMessageToChat(welcomeMsg);
+            elements.chatMessages.innerHTML = tipsText; 
         }
     });
 
@@ -152,24 +148,6 @@ async function loadHistory(scenario, knowledgeBaseId = null) {
         console.error('加载历史记录时出错:', error);
         elements.historyContainer.innerHTML = '<div class="empty-state">加载历史记录时出错</div>';
     }    
-    // try {
-    //     const response = await fetch(`/api/history?scenario=${encodeURIComponent(scenario)}&knowledge_base_id=${encodeURIComponent(knowledgeBaseId)}`, {
-    //         method: 'GET',
-    //         credentials: 'include'
-    //     });
-        
-    //     if (response.ok) {
-    //         const historyData = await response.json();
-    //         console.log(historyData);
-    //         renderHistory(historyData);
-    //     } else {
-    //         console.error('加载历史记录失败');
-    //         elements.historyContainer.innerHTML = '<div class="empty-state">无法加载历史记录</div>';
-    //     }
-    // } catch (error) {
-    //     console.error('加载历史记录时出错:', error);
-    //     elements.historyContainer.innerHTML = '<div class="empty-state">加载历史记录时出错</div>';
-    // }
 }
 
 async function loadKnowledgeBases() {
@@ -407,20 +385,7 @@ async function loadConversation(conversationId, knowledgeBaseId = null) {
                 console.error("对话不存在或出错:", conversationData.messages);
                 elements.chatMessages.innerHTML = '';
                 // 添加场景特定的欢迎消息
-                elements.chatMessages.innerHTML = `
-                    <div class="message-container guide-text">
-                        <div class="message ai-message">
-                            <div class="message-content">
-                                <p>你好！欢迎使用AI智能测试平台。我可以帮你：</p>
-                                <p>- 梳理需求、设计测试策略、分析测试场景和测试点；</p>
-                                <p>- 根据知识库和你的需求帮你生成测试用例；</p>
-                                <p>- 排查产品问题、阅读用户手册等。</p>
-                                <p>你可以上传文档，创建和使用新的知识库。</p>
-                                <p>请选择左侧的功能场景，输入你的问题，让我们开始吧！</p>
-                            </div>
-                        </div>
-                    </div>
-                `;   
+                elements.chatMessages.innerHTML = tipsText;
             }
             
             
@@ -431,23 +396,6 @@ async function loadConversation(conversationId, knowledgeBaseId = null) {
     } catch (error) {
         console.error('加载对话内容时出错:', error);
     }    
-    // try {
-    //     const response = await fetch(`/api/conversation/${conversationId}`, {
-    //         method: 'GET',
-    //         credentials: 'include'
-    //     });
-        
-    //     if (response.ok) {
-    //         const conversationData = await response.json();
-    //         renderConversation(conversationData);
-            
-    //         elements.chatTitle.textContent = conversationData.title || "对话详情";
-    //     } else {
-    //         console.error('加载对话内容失败');
-    //     }
-    // } catch (error) {
-    //     console.error('加载对话内容时出错:', error);
-    // }
 }
 
 // 渲染对话内容
@@ -559,20 +507,7 @@ function setupEventListeners() {
             // 清空聊天区域
             elements.chatMessages.innerHTML = '';
             // 添加场景特定的欢迎消息
-            elements.chatMessages.innerHTML = `
-                <div class="message-container guide-text">
-                    <div class="message ai-message">
-                        <div class="message-content">
-                            <p>你好！欢迎使用AI智能测试平台。我可以帮你：</p>
-                            <p>- 梳理需求、设计测试策略、分析测试场景和测试点；</p>
-                            <p>- 根据知识库和你的需求帮你生成测试用例；</p>
-                            <p>- 排查产品问题、阅读用户手册等。</p>
-                            <p>你可以上传文档，创建和使用新的知识库。</p>
-                            <p>请选择左侧的功能场景，输入你的问题，让我们开始吧！</p>
-                        </div>
-                    </div>
-                </div>
-            `;            
+            elements.chatMessages.innerHTML = tipsText           
             // 根据当前选中的知识库加载新场景的历史记录
             await loadHistory(newScenario, appState.currentKnowledgeBaseId);
 
@@ -609,20 +544,7 @@ function setupEventListeners() {
                 const data = await response.json();
                 appState.currentConversation = data.conversation_id;
                 
-            elements.chatMessages.innerHTML = `
-                <div class="message-container guide-text">
-                    <div class="message ai-message">
-                        <div class="message-content">
-                            <p>你好！欢迎使用AI智能测试平台。我可以帮你：</p>
-                            <p>- 梳理需求、设计测试策略、分析测试场景和测试点；</p>
-                            <p>- 根据知识库和你的需求帮你生成测试用例；</p>
-                            <p>- 排查产品问题、阅读用户手册等。</p>
-                            <p>你可以上传文档，创建和使用新的知识库。</p>
-                            <p>请选择左侧的功能场景，输入你的问题，让我们开始吧！</p>
-                        </div>
-                    </div>
-                </div>
-            `;  
+            elements.chatMessages.innerHTML = tipsText  
                 
                 // 刷新历史记录
                 await loadHistory(appState.currentScenario, appState.currentKnowledgeBaseId);
@@ -685,17 +607,6 @@ function setupEventListeners() {
     });
 }
 
-// 添加获取场景欢迎消息的辅助函数
-function getScenarioWelcomeMessage(scenario) {
-    const scenarioWelcome = {
-        "产品手册": `我是您的产品助手，专注于容灾备份产品领域。\n\n您可以询问我有关容灾备份产品的详细功能说明与操作指南。\n\n📌 例如：如何配置备份策略？`,
-        "运维助手": `我是您的智能运维助手，可以协助您处理服务器运维、故障排查和性能优化等问题。\n\n请告诉我您遇到的具体问题或需求，我将提供针对性的解决方案。\n\n📌 你可以这样问我：MySQL备份失败会是什么原因？`,
-        "需求挖掘": `本场景用于需求分析与挖掘，请描述您的业务背景或功能需求，我将协助您梳理系统需求并生成清晰的需求文档。\n\n📌 你可以这样问我：如何设计一个在线支付系统的需求？`,
-        "用例生成": `请输入您需要测试的功能描述，我将自动生成对应的测试用例，并支持导出 CSV 文件到 Excel 查看。\n\n📌 你可以这样问我：请根据用户登录功能生成测试用例。`
-    };
-    
-    return scenarioWelcome[scenario] || "你好！我是你的智能助手，我可以帮助你进行需求分析、测试用例生成、问题排查、文档查询等。请选择对应的场景，来开始我们的对话吧~~";
-}
 
 // 发送消息事件
 async function sendMessage() {

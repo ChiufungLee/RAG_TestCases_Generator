@@ -38,73 +38,6 @@ function showMessage(message, type = 'info') {
     // 添加到页面
     document.body.appendChild(messageDiv);
     
-    // 添加样式
-    const style = document.createElement('style');
-    style.textContent = `
-        .message-alert {
-            position: fixed;
-            top: 20px;
-            right: 20px;
-            padding: 15px 20px;
-            border-radius: 8px;
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-            z-index: 2000;
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            min-width: 300px;
-            max-width: 400px;
-            animation: slideIn 0.3s ease;
-            font-weight: 500;
-        }
-        
-        @keyframes slideIn {
-            from {
-                transform: translateX(100%);
-                opacity: 0;
-            }
-            to {
-                transform: translateX(0);
-                opacity: 1;
-            }
-        }
-        
-        .message-info {
-            background-color: #d1ecf1;
-            color: #0c5460;
-            border-left: 4px solid #17a2b8;
-        }
-        
-        .message-success {
-            background-color: #d4edda;
-            color: #155724;
-            border-left: 4px solid #28a745;
-        }
-        
-        .message-error {
-            background-color: #f8d7da;
-            color: #721c24;
-            border-left: 4px solid #dc3545;
-        }
-        
-        .message-warning {
-            background-color: #fff3cd;
-            color: #856404;
-            border-left: 4px solid #ffc107;
-        }
-        
-        .message-close {
-            background: none;
-            border: none;
-            font-size: 1.5rem;
-            color: inherit;
-            cursor: pointer;
-            margin-left: 15px;
-            line-height: 1;
-        }
-    `;
-    document.head.appendChild(style);
-    
     // 自动消失
     setTimeout(() => {
         if (messageDiv.parentNode) {
@@ -180,59 +113,6 @@ async function loadKnowledgeBases() {
         `;
         
         // 添加错误状态样式
-        const errorStyle = document.createElement('style');
-        errorStyle.textContent = `
-            .error-state {
-                grid-column: 1 / -1;
-                text-align: center;
-                padding: 60px 20px;
-                color: var(--danger-color);
-            }
-            
-            .error-state i {
-                font-size: 4rem;
-                margin-bottom: 20px;
-            }
-            
-            .error-state p {
-                font-size: 1.2rem;
-                margin-bottom: 20px;
-            }
-            
-            .retry-btn {
-                background-color: var(--primary-color);
-                color: white;
-                border: none;
-                border-radius: var(--border-radius-sm);
-                padding: 10px 20px;
-                font-size: 1rem;
-                cursor: pointer;
-                transition: var(--transition);
-            }
-            
-            .retry-btn:hover {
-                background-color: var(--secondary-color);
-            }
-            
-            .loading-state {
-                grid-column: 1 / -1;
-                text-align: center;
-                padding: 60px 20px;
-                color: var(--text-secondary);
-            }
-            
-            .loading-state i {
-                font-size: 3rem;
-                margin-bottom: 20px;
-                animation: spin 1s linear infinite;
-            }
-            
-            @keyframes spin {
-                0% { transform: rotate(0deg); }
-                100% { transform: rotate(360deg); }
-            }
-        `;
-        document.head.appendChild(errorStyle);
     }
 }
 
