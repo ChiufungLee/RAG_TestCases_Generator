@@ -30,4 +30,4 @@ class KnowledgeBaseResponse(BaseModel):
     file_count: int
     created_at: datetime
     updated_at: datetime
-    files: List[KnowledgeFileResponse] = []
+    files: List[KnowledgeFileResponse] = Field(default_factory=list)

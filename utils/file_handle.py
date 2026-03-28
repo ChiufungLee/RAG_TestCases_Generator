@@ -1,18 +1,16 @@
-# from langchain_community.document_loaders import PyPDFLoader
 import logging
-from typing import List, Optional
+import os
 import uuid
-# from langchain.document_loaders import PyPDFLoader
+from typing import List, Optional
+
+import chromadb
+from dotenv import load_dotenv
 from langchain_community.document_loaders import PyPDFLoader
+from langchain_core.documents import Document
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from openai import OpenAI
-import os
-import chromadb
-from langchain_core.documents import Document
-from dotenv import load_dotenv
 
 # 配置日志
-logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 load_dotenv()
@@ -29,32 +27,18 @@ os.makedirs(TEMP_UPLOAD_DIR, exist_ok=True)
 
 client = OpenAI(
     api_key=ALIYUN_API_KEY,
-    base_url=ALIYUN_BASE_URL
+    base_url=ALIYUN_BASE_URL,
 )
-
 
 # 初始化 ChromaDB 客户端
 chromadb_client = chromadb.PersistentClient(path=RAG_DB_PATH)
+
 
 class DocumentProcessor:
     def __init__(self):
         self.client = client
         self.chromadb_client = chromadb_client
-    # def __init__(self):
-    #     # 延迟初始化客户端，避免在导入时就需要环境变量
-    #     self.client = None
-    #     self.chromadb_client = None
-        
-    # def _init_clients(self):
-    #     """延迟初始化客户端"""
-    #     if self.client is None:
-    #         self.client = OpenAI(
-    #             api_key=ALIYUN_API_KEY,
-    #             base_url=ALIYUN_BASE_URL
-    #         )
-    #     if self.chromadb_client is None:
-    #         self.chromadb_client = chromadb.PersistentClient(path=RAG_DB_PATH)
-            
+
     def embed(self, text: str) -> List[float]:
         """生成文本的嵌入向量"""
         try:
@@ -62,11 +46,11 @@ class DocumentProcessor:
                 model="text-embedding-v4",
                 input=text,
                 dimensions=1024,
-                encoding_format="float"
+                encoding_format="float",
             )
             return response.data[0].embedding
         except Exception as e:
-            print(f"Embedding生成失败: {e}")
+            logger.error("Embedding生成失败: %s", e, exc_info=True)
             return []
 
     def load_pdf(self, file_path: str) -> List[Document]:
@@ -75,73 +59,73 @@ class DocumentProcessor:
             loader = PyPDFLoader(file_path)
             docs = loader.load()
             for doc in docs:
-                doc.page_content = doc.page_content.replace('\n', ' ').strip()
+                doc.page_content = doc.page_content.replace("\n", " ").strip()
             return docs
         except Exception as e:
-            print(f"PDF加载失败: {e}")
+            logger.error("PDF加载失败: %s", e, exc_info=True)
             raise
 
-    def split_documents(self, docs: list[Document],
-                        chunk_size: int = 1000,
-                        chunk_overlap: int = 200) -> list[Document]:
+    def split_documents(
+        self,
+        docs: list[Document],
+        chunk_size: int = 1000,
+        chunk_overlap: int = 200,
+    ) -> list[Document]:
         """文档分块"""
         text_splitter = RecursiveCharacterTextSplitter(
             chunk_size=chunk_size,
             chunk_overlap=chunk_overlap,
-            add_start_index=True
+            add_start_index=True,
         )
         return text_splitter.split_documents(docs)
-    
-    def save_to_chroma(self, 
-                      splits: List[Document], 
-                      collection_name: str,
-                      file_metadata: Optional[dict] = None) -> int:
+
+    def save_to_chroma(
+        self,
+        splits: List[Document],
+        collection_name: str,
+        file_metadata: Optional[dict] = None,
+    ) -> int:
         """保存文档分片到ChromaDB"""
         try:
-            # 获取或创建集合
-            collection = self.chromadb_client.get_or_create_collection(
-                name=collection_name
-            )
-            
+            collection = self.chromadb_client.get_or_create_collection(name=collection_name)
+
             chunk_count = 0
-            for i, split in enumerate(splits):
-                # 生成唯一ID
+            for split in splits:
                 doc_id = f"{collection_name}_{uuid.uuid4().hex}"
-                
-                # 准备元数据
+
                 metadata = split.metadata.copy() if split.metadata else {}
                 if file_metadata:
                     metadata.update(file_metadata)
-                
-                # 生成向量
+
                 vector = self.embed(split.page_content)
-                
-                # 添加到集合
+                if not vector:
+                    continue
+
                 collection.add(
                     ids=[doc_id],
                     documents=[split.page_content],
                     embeddings=[vector],
-                    metadatas=[metadata]
+                    metadatas=[metadata],
                 )
                 chunk_count += 1
-            
-            logger.info(f"成功保存 {chunk_count} 个分片到集合 {collection_name}")
+
+            logger.info("成功保存 %s 个分片到集合 %s", chunk_count, collection_name)
             return chunk_count
-            
+
         except Exception as e:
-            logger.error(f"保存到ChromaDB失败: {e}")
+            logger.error("保存到ChromaDB失败: %s", e, exc_info=True)
             raise
 
     def delete_collection(self, collection_name: str) -> bool:
         """删除ChromaDB集合"""
         try:
             self.chromadb_client.delete_collection(name=collection_name)
-            logger.info(f"成功删除集合: {collection_name}")
+            logger.info("成功删除集合: %s", collection_name)
             return True
         except Exception as e:
-            logger.error(f"删除集合失败: {e}")
+            logger.error("删除集合失败: %s", e, exc_info=True)
             return False
-    
+
     def get_collection_info(self, collection_name: str) -> Optional[dict]:
         """获取集合信息"""
         try:
@@ -149,10 +133,12 @@ class DocumentProcessor:
             return {
                 "name": collection_name,
                 "count": collection.count(),
-                "metadata": collection.metadata
+                "metadata": collection.metadata,
             }
-        except Exception:
+        except Exception as e:
+            logger.error("获取集合信息失败: %s", e, exc_info=True)
             return None
+
 
 # 全局处理器实例
 document_processor = DocumentProcessor()

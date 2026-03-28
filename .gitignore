@@ -4,9 +4,9 @@
 *.pyd
 *.db
 # chroma_db/
-fastapi_venv/
+fastapi_venv/*
 .venv/
 .env
-chroma_db/
-temp_uploads/
-uploads/
+chroma_db/*
+temp_uploads/*
+uploads/*
