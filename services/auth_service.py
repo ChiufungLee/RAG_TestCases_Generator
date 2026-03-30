@@ -2,6 +2,8 @@ from datetime import datetime
 from typing import Dict, Optional
 
 import bcrypt
+from fastapi import HTTPException, Request
+from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 
 from models.user import User
@@ -107,15 +109,41 @@ class AuthService:
             db.rollback()
             return {
                 "success": False,
-                "error": f"创建用户失败: {str(e)}",
+                "error": "创建用户失败，请稍后重试",
             }
+
+    @staticmethod
+    def get_user_id_from_session(session_data: Dict) -> Optional[int]:
+        return session_data.get("user_id")
+
+    @staticmethod
+    def require_user_id(session_data: Dict) -> int:
+        user_id = AuthService.get_user_id_from_session(session_data)
+        if not user_id:
+            raise HTTPException(status_code=401, detail="未登录")
+        return user_id
+
+    @staticmethod
+    def require_request_user_id(request: Request) -> int:
+        return AuthService.require_user_id(request.session)
+
+    @staticmethod
+    def get_optional_request_user_id(request: Request) -> Optional[int]:
+        try:
+            return AuthService.require_request_user_id(request)
+        except HTTPException:
+            return None
+
+    @staticmethod
+    def unauthorized_json_response() -> JSONResponse:
+        return JSONResponse(status_code=401, content={"error": "未登录"})
 
     @staticmethod
     async def get_current_user_from_session(
         db: Session,
         session_data: Dict,
     ) -> Optional[User]:
-        user_id = session_data.get("user_id")
+        user_id = AuthService.get_user_id_from_session(session_data)
         if not user_id:
             return None
 

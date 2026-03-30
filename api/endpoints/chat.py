@@ -1,12 +1,15 @@
+import logging
+
 from fastapi import APIRouter, Depends, Form, Request, Response
 from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 from fastapi.templating import Jinja2Templates
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
-import logging
 
 from models.database import get_db
 from prompts.prompts import get_prompt
 from services import knowlege_service
+from services.auth_service import AuthService
 from services.chat_service import ChatService
 from utils.data_handle import convert_table_to_csv, extract_table_from_markdown
 from utils.llm_handle import generate_response
@@ -17,19 +20,66 @@ templates = Jinja2Templates(directory="templates")
 logger = logging.getLogger(__name__)
 
 
+def _build_chat_prompt(scenario, message, history, knowledge_base_name, context, use_knowledge_base: bool):
+    prompt_scenario = scenario if use_knowledge_base else f"{scenario}_plain"
+    return get_prompt(
+        prompt_scenario,
+        context=context,
+        history=history,
+        question=message,
+        knowledge_base_name=knowledge_base_name,
+    )
+
+
+async def _load_chat_context(message: str, knowledge_base_id: str | None, db: Session, user_id: int):
+    context = ""
+    knowledge_base_name = "无"
+
+    if not knowledge_base_id:
+        return context, knowledge_base_name
+
+    knowledge_base = await knowlege_service.get_knowledge_base_by_id(kb_id=knowledge_base_id, db=db, user_id=user_id)
+    if not knowledge_base:
+        return context, knowledge_base_name
+
+    knowledge_base_name = knowledge_base.name
+    retriever = await get_rag_retriever_by_kb(knowledge_base, user_id=user_id)
+    if retriever:
+        try:
+            docs = await retriever.get_relevant_documents(message)
+            context = "\n\n".join(doc.page_content for doc in docs)
+            logger.info("从知识库 %s 检索到 %s 个相关文档", knowledge_base_id, len(docs))
+        except Exception as e:
+            logger.error("检索失败: %s", e, exc_info=True)
+
+    return context, knowledge_base_name
+
+
+class ChatRequest(BaseModel):
+    message: str
+    scenario: str
+    conversation_id: str
+    knowledge_base_id: str | None = None
+
+
 @app.get("/chat", response_class=HTMLResponse)
 async def chat_page(request: Request):
     username = request.session.get("username")
     if username is None:
-        return templates.TemplateResponse("login.html", {"request": request, "error": "用户会话已失效，请重新登录"})
-    return templates.TemplateResponse("index.html", {"request": request, "username": username})
+        return templates.TemplateResponse(request, "login.html", {"error": "用户会话已失效，请重新登录"})
+    return templates.TemplateResponse(request, "index.html", {"username": username})
 
 
 @app.get("/api/history")
-async def get_history(request: Request, scenario: str, knowledge_base_id: str, db: Session = Depends(get_db)):
-    user_id = request.session.get("user_id")
-    if not user_id:
-        return JSONResponse(status_code=401, content={"error": "未登录"})
+async def get_history(
+    request: Request,
+    scenario: str,
+    knowledge_base_id: str | None = None,
+    db: Session = Depends(get_db),
+):
+    user_id = AuthService.get_optional_request_user_id(request)
+    if user_id is None:
+        return AuthService.unauthorized_json_response()
     conversation_groups = await ChatService.get_conversation_groups(user_id, scenario, knowledge_base_id, db)
     return {"groups": conversation_groups}
 
@@ -40,9 +90,9 @@ async def get_conversation(
     conversation_id: str,
     db: Session = Depends(get_db),
 ):
-    user_id = request.session.get("user_id")
-    if not user_id:
-        return JSONResponse(status_code=401, content={"error": "未登录"})
+    user_id = AuthService.get_optional_request_user_id(request)
+    if user_id is None:
+        return AuthService.unauthorized_json_response()
 
     conversation_messages = await ChatService.get_conversation_message(user_id, conversation_id, db)
     if not conversation_messages:
@@ -55,12 +105,12 @@ async def get_conversation(
 async def create_new_conversation(
     request: Request,
     scenario: str = Form(...),
-    knowledge_base_id: str = Form(None),
+    knowledge_base_id: str | None = Form(None),
     db: Session = Depends(get_db),
 ):
-    user_id = request.session.get("user_id")
-    if not user_id:
-        return JSONResponse(status_code=401, content={"error": "未登录"})
+    user_id = AuthService.get_optional_request_user_id(request)
+    if user_id is None:
+        return AuthService.unauthorized_json_response()
 
     title = "新对话"
     new_conversation = await ChatService.create_new_conversation(
@@ -80,18 +130,22 @@ async def create_new_conversation(
 @app.post("/api/chat")
 async def chat_endpoint(
     request: Request,
-    data: dict,
+    data: ChatRequest,
     db: Session = Depends(get_db),
 ):
-    user_id = request.session.get("user_id")
-    if not user_id:
-        return JSONResponse(status_code=401, content={"error": "未登录"})
+    user_id = AuthService.get_optional_request_user_id(request)
+    if user_id is None:
+        return AuthService.unauthorized_json_response()
 
-    message = data.get("message")
-    scenario = data.get("scenario")
-    conversation_id = data.get("conversation_id")
-    knowledge_base_id = data.get("knowledge_base_id") or None
+    message = data.message.strip()
+    scenario = data.scenario.strip()
+    conversation_id = data.conversation_id.strip()
+    knowledge_base_id = data.knowledge_base_id or None
 
+    if not message:
+        return JSONResponse(status_code=400, content={"error": "消息不能为空"})
+    if not scenario:
+        return JSONResponse(status_code=400, content={"error": "缺少场景"})
     if not conversation_id:
         return JSONResponse(status_code=400, content={"error": "缺少会话ID"})
 
@@ -103,28 +157,14 @@ async def chat_endpoint(
     await ChatService.create_new_message(conversation_id, "user", message, db)
 
     history = await ChatService.get_conversation_history(conversation_id, db)
-
-    context = ""
-    if knowledge_base_id:
-        retriever = await get_rag_retriever_by_kb(knowledge_base_id, db, user_id=user_id)
-        if retriever:
-            try:
-                docs = await retriever.get_relevant_documents(message)
-                context = "\n\n".join([doc.page_content for doc in docs])
-                logger.info("从知识库 %s 检索到 %s 个相关文档", knowledge_base_id, len(docs))
-            except Exception as e:
-                logger.error("检索失败: %s", e, exc_info=True)
-                context = ""
-
-    knowledge_base = await knowlege_service.get_knowledge_base_by_id(kb_id=knowledge_base_id, db=db, user_id=user_id)
-    knowledge_base_name = knowledge_base.name if knowledge_base else "无"
-
-    prompt = get_prompt(
+    context, knowledge_base_name = await _load_chat_context(message, knowledge_base_id, db, user_id)
+    prompt = _build_chat_prompt(
         scenario,
-        context=context,
-        history=history,
-        question=message,
-        knowledge_base_name=knowledge_base_name,
+        message,
+        history,
+        knowledge_base_name,
+        context,
+        use_knowledge_base=bool(knowledge_base_id),
     )
     return StreamingResponse(
         generate_response(request, prompt, conversation_id, is_new_conversation, message, db),
@@ -138,9 +178,9 @@ async def delete_conversation(
     request: Request,
     db: Session = Depends(get_db),
 ):
-    user_id = request.session.get("user_id")
-    if not user_id:
-        return JSONResponse(status_code=401, content={"error": "未登录"})
+    user_id = AuthService.get_optional_request_user_id(request)
+    if user_id is None:
+        return AuthService.unauthorized_json_response()
 
     delete_result = await ChatService.delete_conversation(user_id, conversation_id, db)
     if not delete_result:
@@ -156,9 +196,9 @@ async def rename_conversation(
     data: dict,
     db: Session = Depends(get_db),
 ):
-    user_id = request.session.get("user_id")
-    if not user_id:
-        return JSONResponse(status_code=401, content={"error": "未登录"})
+    user_id = AuthService.get_optional_request_user_id(request)
+    if user_id is None:
+        return AuthService.unauthorized_json_response()
 
     new_title = data.get("title", "").strip()
     if not new_title:
@@ -177,9 +217,9 @@ async def export_testcases(
     conversation_id: str,
     db: Session = Depends(get_db),
 ):
-    user_id = request.session.get("user_id")
-    if not user_id:
-        return JSONResponse(status_code=401, content={"error": "未登录"})
+    user_id = AuthService.get_optional_request_user_id(request)
+    if user_id is None:
+        return AuthService.unauthorized_json_response()
 
     ai_messages = await ChatService.get_conversation_ai_message(user_id, conversation_id, db)
     if not ai_messages:

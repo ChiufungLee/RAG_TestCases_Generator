@@ -3,10 +3,28 @@ class RegisterManager {
         this.baseURL = '/';
         this.initialize();
     }
-    
+
     initialize() {
         this.bindEvents();
         this.setupValidation();
+    }
+
+    async parseResponse(response) {
+        const contentType = response.headers.get('content-type') || '';
+        if (contentType.includes('application/json')) {
+            try {
+                return await response.json();
+            } catch {
+                return null;
+            }
+        }
+
+        try {
+            const text = await response.text();
+            return text ? { detail: text } : null;
+        } catch {
+            return null;
+        }
     }
     
     bindEvents() {
@@ -93,18 +111,16 @@ class RegisterManager {
         this.setLoading(true);
         
         try {
-            // 调用注册API
-            const userData = { username, password };
-            // if (email) {
-            //     userData.email = email;
-            // }
+            const formData = new URLSearchParams();
+            formData.append('username', username);
+            formData.append('password', password);
 
-            const response = await fetch(`register`, {
+            const response = await fetch('/register', {
                 method: 'POST',
                 headers: {
-                    'Content-Type': 'application/json'
+                    'Content-Type': 'application/x-www-form-urlencoded'
                 },
-                body: JSON.stringify(userData)
+                body: formData.toString()
             });
 
             // 如果是重定向响应
@@ -116,18 +132,16 @@ class RegisterManager {
                 return;
             }
 
+            const data = await this.parseResponse(response);
+
             if (response.ok) {
-                const data = await response.json();
                 this.showSuccess('注册成功，正在跳转到登录页面...');
-                
-                // 延迟跳转到登录页面
+
                 setTimeout(() => {
                     window.location.href = '/login';
                 }, 2000);
-                
             } else {
-                const errorData = await response.json();
-                this.showError(errorData.detail || '注册失败');
+                this.showError(data?.detail || '注册失败');
                 this.setLoading(false);
             }
         } catch (error) {

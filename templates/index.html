@@ -46,7 +46,7 @@
                     <div class="username">{{username}}</div>
                     <button class="more-btn">···</button>
                     <div class="dropdown-content" id="dropdownContent">
-                        <div class="dropdown-item"><a href="/api/v1/func/func_main"> 知识库管理</a></div>
+                        <div class="dropdown-item"><a href="/knowledge"> 知识库管理</a></div>
                         <div class="dropdown-item" onclick="logout()">退出登录</div>
                     </div>
                 </div>
@@ -60,7 +60,7 @@
                  <!-- 下拉列表，可以选择知识库 -->
                 <div class="knowledge-base-selector">
                     <select id="knowledgeBaseSelect" class="kb-select" aria-label="选择知识库">
-                        <!-- <option value="">选择知识库（可选）</option> -->
+                        <option value="">普通对话（不使用知识库）</option>
                         <!-- 知识库选项将通过JS动态添加 -->
                     </select>
                     <div class="kb-select-arrow">
@@ -97,7 +97,7 @@
             </div>
             
             <footer class="footer-note">
-                <p>你可以在 <a href="https://github.com/ChiufungLee/FastAPI_Local_RAG" class="email-link"> GitHub </a>上查看本项目代码</p>
+                <p>本地运行后可通过 /docs 查看接口文档</p>
             </footer>
         </main>
         <div class="history-overlay" id="historyOverlay">

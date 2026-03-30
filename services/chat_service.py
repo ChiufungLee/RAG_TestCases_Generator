@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta
+from typing import Optional
 
 from sqlalchemy import desc
 from sqlalchemy.orm import Session
@@ -9,7 +10,7 @@ from models.knowledge_models import KnowledgeBase
 
 class ChatService:
     @staticmethod
-    async def get_conversation_groups(user_id: int, scenario: str, knowledge_base_id: str, db: Session):
+    async def get_conversation_groups(user_id: int, scenario: str, knowledge_base_id: str | None, db: Session):
         today = datetime.now().date()
         three_days_ago = today - timedelta(days=3)
         one_week_ago = today - timedelta(days=7)
@@ -53,10 +54,28 @@ class ChatService:
         return groups
 
     @staticmethod
-    async def create_new_conversation(user_id: int, title: str, scenario: str, knowledge_base_id: str, db: Session) -> Conversation:
+    def _get_user_conversation_query(db: Session, user_id: int):
+        return db.query(Conversation).filter(Conversation.user_id == user_id)
+
+    @staticmethod
+    async def get_user_conversation(user_id: int, conversation_id: str, db: Session) -> Optional[Conversation]:
+        return ChatService._get_user_conversation_query(db, user_id).filter(Conversation.id == conversation_id).first()
+
+    @staticmethod
+    async def create_new_conversation(
+        user_id: int,
+        title: str,
+        scenario: str,
+        knowledge_base_id: str | None,
+        db: Session,
+    ) -> Conversation:
         knowledge_base_id = knowledge_base_id or None
         if knowledge_base_id:
-            kb = db.query(KnowledgeBase).filter(KnowledgeBase.id == knowledge_base_id).first()
+            kb = (
+                db.query(KnowledgeBase)
+                .filter(KnowledgeBase.id == knowledge_base_id, KnowledgeBase.owner_user_id == user_id)
+                .first()
+            )
             if not kb:
                 knowledge_base_id = None
 
@@ -102,11 +121,7 @@ class ChatService:
 
     @staticmethod
     async def get_conversation_message(user_id: int, conversation_id: str, db: Session):
-        conversation = (
-            db.query(Conversation)
-            .filter(Conversation.id == conversation_id, Conversation.user_id == user_id)
-            .first()
-        )
+        conversation = await ChatService.get_user_conversation(user_id, conversation_id, db)
         if not conversation:
             return None
 
@@ -119,12 +134,7 @@ class ChatService:
 
     @staticmethod
     async def rename_conversation(user_id: int, conversation_id: str, new_title: str, db: Session):
-        conversation = (
-            db.query(Conversation)
-            .filter(Conversation.id == conversation_id, Conversation.user_id == user_id)
-            .first()
-        )
-
+        conversation = await ChatService.get_user_conversation(user_id, conversation_id, db)
         if not conversation:
             return None
 
@@ -140,12 +150,7 @@ class ChatService:
 
     @staticmethod
     async def delete_conversation(user_id: int, conversation_id: str, db: Session):
-        conversation = (
-            db.query(Conversation)
-            .filter(Conversation.id == conversation_id, Conversation.user_id == user_id)
-            .first()
-        )
-
+        conversation = await ChatService.get_user_conversation(user_id, conversation_id, db)
         if not conversation:
             return None
 
@@ -159,11 +164,7 @@ class ChatService:
 
     @staticmethod
     async def get_conversation_ai_message(user_id: int, conversation_id: str, db: Session):
-        conversation = (
-            db.query(Conversation)
-            .filter(Conversation.id == conversation_id, Conversation.user_id == user_id)
-            .first()
-        )
+        conversation = await ChatService.get_user_conversation(user_id, conversation_id, db)
         if not conversation:
             return None
 
@@ -176,7 +177,6 @@ class ChatService:
 
     @staticmethod
     async def get_conversation_info(conversation_id: str, db: Session, user_id: int | None = None):
-        query = db.query(Conversation).filter(Conversation.id == conversation_id)
         if user_id is not None:
-            query = query.filter(Conversation.user_id == user_id)
-        return query.first()
+            return await ChatService.get_user_conversation(user_id, conversation_id, db)
+        return db.query(Conversation).filter(Conversation.id == conversation_id).first()

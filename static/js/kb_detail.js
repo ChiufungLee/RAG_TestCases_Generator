@@ -46,10 +46,13 @@ function showMessage(message, type = 'info') {
     
     const messageDiv = document.createElement('div');
     messageDiv.className = `message-alert message-${type}`;
-    messageDiv.innerHTML = `
-        <span>${message}</span>
-        <button class="message-close">&times;</button>
-    `;
+    const messageText = document.createElement('span');
+    messageText.textContent = message;
+    const closeButton = document.createElement('button');
+    closeButton.className = 'message-close';
+    closeButton.innerHTML = '&times;';
+    messageDiv.appendChild(messageText);
+    messageDiv.appendChild(closeButton);
     
     document.body.appendChild(messageDiv);
     
@@ -171,70 +174,91 @@ function renderFilesList(files) {
 
     // 添加文件行
     sortedFiles.forEach(file => {
-    const row = document.createElement('tr');
-    row.className = 'file-row';
-    row.dataset.fileId = file.id;
+        const row = document.createElement('tr');
+        row.className = 'file-row';
+        row.dataset.fileId = file.id;
 
-    // 格式化文件大小
-    const fileSize = formatFileSize(file.file_size || 0);
+        const fileSize = formatFileSize(file.file_size || 0);
 
-    // 格式化上传时间
-    let uploadedTime = '-';
-    if (file.uploaded_at) {
-        const date = new Date(file.uploaded_at);
-        uploadedTime = date.toLocaleString('zh-CN');
-    }
+        let uploadedTime = '-';
+        if (file.uploaded_at) {
+            const date = new Date(file.uploaded_at);
+            uploadedTime = date.toLocaleString('zh-CN');
+        }
 
-    // 状态标签
-    let statusClass = 'status-pending';
-    let statusText = '待处理';
+        let statusClass = 'status-pending';
+        let statusText = '待处理';
 
-    if (file.status === 'processing') {
-        statusClass = 'status-processing';
-        statusText = '处理中';
-    } else if (file.status === 'completed') {
-        statusClass = 'status-completed';
-        statusText = '已完成';
-    } else if (file.status === 'failed') {
-        statusClass = 'status-failed';
-        statusText = '失败';
-    }
+        if (file.status === 'processing') {
+            statusClass = 'status-processing';
+            statusText = '处理中';
+        } else if (file.status === 'completed') {
+            statusClass = 'status-completed';
+            statusText = '已完成';
+        } else if (file.status === 'failed') {
+            statusClass = 'status-failed';
+            statusText = '失败';
+        }
 
-    // 状态详细描述
-    let statusDetail = '';
-    if (file.status === 'completed') {
-        statusDetail = ` (${file.chunk_count}个片段)`;
-    } else if (file.status === 'failed') {
-        statusDetail = ' - 处理失败';
-    }
+        let statusDetail = '';
+        if (file.status === 'completed') {
+            statusDetail = ` (${file.chunk_count}个片段)`;
+        } else if (file.status === 'failed') {
+            statusDetail = ' - 处理失败';
+        }
 
-    row.innerHTML = `
-        <td>
-            <i class="fas fa-file-pdf file-icon"></i>
-            ${file.filename}
-        </td>
-        <td>${fileSize}</td>
-        <td>
-            <span class="status-badge ${statusClass}" title="${file.status}">
-                ${statusText}${statusDetail}
-            </span>
-        </td>
-        <td>${uploadedTime}</td>
-        <td>
-            <div class="file-actions">
-                ${file.status === 'completed' ? `
-                <button class="action-btn preview" title="预览" onclick="previewFile('${file.id}')">
-                    <i class="fas fa-eye"></i>
-                </button>
-                ` : ''}
-                <button class="action-btn delete" title="删除" onclick="deleteFile('${file.id}', '${file.filename}')">
-                    <i class="fas fa-trash-alt"></i>
-                </button>
-            </div>
-        </td>
-    `;
+        const nameCell = document.createElement('td');
+        const nameIcon = document.createElement('i');
+        nameIcon.className = 'fas fa-file-pdf file-icon';
+        nameCell.appendChild(nameIcon);
+        nameCell.appendChild(document.createTextNode(` ${file.filename}`));
 
-    filesTableBody.appendChild(row);
+        const sizeCell = document.createElement('td');
+        sizeCell.textContent = fileSize;
+
+        const statusCell = document.createElement('td');
+        const statusBadge = document.createElement('span');
+        statusBadge.className = `status-badge ${statusClass}`;
+        statusBadge.title = file.status;
+        statusBadge.textContent = `${statusText}${statusDetail}`;
+        statusCell.appendChild(statusBadge);
+
+        const timeCell = document.createElement('td');
+        timeCell.textContent = uploadedTime;
+
+        const actionCell = document.createElement('td');
+        const actionWrap = document.createElement('div');
+        actionWrap.className = 'file-actions';
+
+        if (file.status === 'completed') {
+            const previewBtn = document.createElement('button');
+            previewBtn.className = 'action-btn preview';
+            previewBtn.title = '预览';
+            previewBtn.addEventListener('click', () => previewFile(file.id));
+            const previewIcon = document.createElement('i');
+            previewIcon.className = 'fas fa-eye';
+            previewBtn.appendChild(previewIcon);
+            actionWrap.appendChild(previewBtn);
+        }
+
+        const deleteBtn = document.createElement('button');
+        deleteBtn.className = 'action-btn delete';
+        deleteBtn.title = '删除';
+        deleteBtn.addEventListener('click', () => deleteFile(file.id, file.filename));
+        const deleteIcon = document.createElement('i');
+        deleteIcon.className = 'fas fa-trash-alt';
+        deleteBtn.appendChild(deleteIcon);
+        actionWrap.appendChild(deleteBtn);
+
+        actionCell.appendChild(actionWrap);
+
+        row.appendChild(nameCell);
+        row.appendChild(sizeCell);
+        row.appendChild(statusCell);
+        row.appendChild(timeCell);
+        row.appendChild(actionCell);
+
+        filesTableBody.appendChild(row);
     });
 }
 
@@ -292,36 +316,25 @@ async function uploadFile(file) {
         xhr.addEventListener('load', async () => {
             if (xhr.status === 200) {
                 const result = JSON.parse(xhr.responseText);
-                
-                if (result.success) {
-                    uploadStatus.className = 'upload-status completed';
-                    uploadStatus.innerHTML = '<i class="fas fa-check-circle"></i> <span>上传成功，正在后台处理...</span>';
-                    
-                    showMessage(`文件"${file.name}"上传成功，正在后台处理`, 'success');
-                    
-                    // 上传成功后，等待2秒后刷新文件列表
-                    setTimeout(() => {
-                        // 这里可以重新加载文件列表
-                        // 由于后端可能还没有处理完文件，我们可以先更新文件计数
-                        const currentCount = parseInt(fileCount.textContent);
-                        fileCount.textContent = currentCount + 1;
-                        
-                        // 隐藏进度条
-                        setTimeout(() => {
-                            uploadProgress.style.display = 'none';
-                        }, 2000);
-                        
-                    }, 2000);
-                } else {
-                    uploadStatus.className = 'upload-status failed';
-                    uploadStatus.innerHTML = '<i class="fas fa-exclamation-circle"></i> <span>上传失败</span>';
-                    showMessage(`文件上传失败: ${result.message}`, 'error');
-                    
-                    // 3秒后隐藏进度条
+
+                uploadStatus.className = 'upload-status completed';
+                uploadStatus.innerHTML = '<i class="fas fa-check-circle"></i> <span>上传成功，正在后台处理...</span>';
+
+                showMessage(`文件"${file.name}"上传成功，正在后台处理`, 'success');
+
+                // 上传成功后，等待2秒后刷新文件列表
+                setTimeout(() => {
+                    // 这里可以重新加载文件列表
+                    // 由于后端可能还没有处理完文件，我们可以先更新文件计数
+                    const currentCount = parseInt(fileCount.textContent);
+                    fileCount.textContent = currentCount + 1;
+
+                    // 隐藏进度条
                     setTimeout(() => {
                         uploadProgress.style.display = 'none';
-                    }, 3000);
-                }
+                    }, 2000);
+
+                }, 2000);
             } else {
                 uploadStatus.className = 'upload-status failed';
                 uploadStatus.innerHTML = '<i class="fas fa-exclamation-circle"></i> <span>上传失败</span>';
@@ -438,7 +451,7 @@ function initEventListeners() {
     
     // 返回按钮
     backBtn.addEventListener('click', () => {
-        window.location.href = '/api/v1/func/func_main';
+        window.location.href = '/knowledge';
     });
     
     // 选择文件按钮

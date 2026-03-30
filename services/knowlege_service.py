@@ -10,24 +10,46 @@ import uuid
 from fastapi import HTTPException
 
 from models.chat import Conversation
-from models.database import SessionLocal
+from models.database import create_session
 from models.knowledge_models import KnowledgeBase, KnowledgeFile
-from utils.file_handle import UPLOAD_DIR, document_processor
+from utils.file_handle import get_document_processor, get_upload_dir
 from utils.retriever import ChromaRetriever
 
 logger = logging.getLogger(__name__)
-UPLOAD_ROOT = Path(UPLOAD_DIR).resolve()
+
+MAX_UPLOAD_SIZE = 50 * 1024 * 1024
+ALLOWED_UPLOAD_EXTENSIONS = {".pdf"}
+
+
+def _refresh_kb_file_count(db, kb_id: str) -> int:
+    new_count = (
+        db.query(KnowledgeFile)
+        .filter(KnowledgeFile.knowledge_base_id == kb_id, KnowledgeFile.status == "completed")
+        .count()
+    )
+    kb = db.query(KnowledgeBase).filter(KnowledgeBase.id == kb_id).first()
+    if kb:
+        kb.file_count = new_count
+        kb.updated_at = datetime.now()
+    return new_count
+
+
+
+def get_upload_root() -> Path:
+    return Path(get_upload_dir()).resolve()
+
 
 
 def resolve_upload_path(file_path: str) -> Path:
+    upload_root = get_upload_root()
     candidate = Path(file_path)
     if not candidate.is_absolute():
-        candidate = (UPLOAD_ROOT / candidate.name).resolve()
+        candidate = (upload_root / candidate.name).resolve()
     else:
         candidate = candidate.resolve()
 
     try:
-        candidate.relative_to(UPLOAD_ROOT)
+        candidate.relative_to(upload_root)
     except ValueError as exc:
         raise HTTPException(status_code=403, detail="文件路径非法") from exc
 
@@ -87,18 +109,30 @@ async def upload_document(kb_id, file, background_tasks, db, user_id: int):
     if not kb:
         raise HTTPException(status_code=404, detail="知识库不存在")
 
-    file_ext = os.path.splitext(file.filename)[1]
+    if not file.filename:
+        raise HTTPException(status_code=400, detail="文件名不能为空")
+
+    file_ext = os.path.splitext(file.filename)[1].lower()
+    if file_ext not in ALLOWED_UPLOAD_EXTENSIONS:
+        raise HTTPException(status_code=400, detail="仅支持上传 PDF 文件")
+
     unique_filename = f"{uuid.uuid4().hex}{file_ext}"
-    save_path = (UPLOAD_ROOT / unique_filename).resolve()
+    save_path = (get_upload_root() / unique_filename).resolve()
 
     try:
+        save_path.parent.mkdir(parents=True, exist_ok=True)
+        total_size = 0
         with open(save_path, "wb") as buffer:
-            shutil.copyfileobj(file.file, buffer)
+            while chunk := file.file.read(1024 * 1024):
+                total_size += len(chunk)
+                if total_size > MAX_UPLOAD_SIZE:
+                    raise HTTPException(status_code=400, detail="文件大小不能超过 50MB")
+                buffer.write(chunk)
 
-        if not save_path.exists():
-            raise HTTPException(status_code=500, detail="文件保存失败")
+        if total_size == 0:
+            raise HTTPException(status_code=400, detail="文件内容不能为空")
 
-        file_size = save_path.stat().st_size
+        file_size = total_size
         file_type = (file_ext.lstrip(".") or (file.content_type or "unknown").split("/")[-1]).lower()
 
         file_record = KnowledgeFile(
@@ -135,10 +169,20 @@ async def upload_document(kb_id, file, background_tasks, db, user_id: int):
         if save_path.exists():
             save_path.unlink()
         logger.error("文件上传失败: %s", e, exc_info=True)
-        return {
-            "success": False,
-            "message": "文件上传失败",
-        }
+        raise HTTPException(status_code=500, detail="文件上传失败") from e
+
+
+async def delete_knowledge_file(db, kb: KnowledgeBase, file_record: KnowledgeFile):
+    file_path = resolve_upload_path(file_record.file_path)
+    document_processor = get_document_processor()
+    document_processor.delete_documents_by_file_id(kb.collection_name, file_record.id)
+
+    db.delete(file_record)
+    if file_path.exists():
+        file_path.unlink()
+
+    _refresh_kb_file_count(db, kb.id)
+    db.commit()
 
 
 async def delete_knowledge_base(db, kb_id, user_id: int):
@@ -151,7 +195,12 @@ async def delete_knowledge_base(db, kb_id, user_id: int):
         for conversation in conversations:
             conversation.knowledge_base_id = None
 
-        document_processor.delete_collection(kb.collection_name)
+        for file_record in list(kb.files):
+            file_path = resolve_upload_path(file_record.file_path)
+            if file_path.exists():
+                file_path.unlink()
+
+        get_document_processor().delete_collection(kb.collection_name)
         await ChromaRetriever.clear_retriever_cache(kb_id)
 
         db.delete(kb)
@@ -165,7 +214,7 @@ async def delete_knowledge_base(db, kb_id, user_id: int):
     except Exception as e:
         db.rollback()
         logger.error("删除知识库失败: %s", e, exc_info=True)
-        raise HTTPException(status_code=500, detail=f"删除失败: {str(e)}")
+        raise HTTPException(status_code=500, detail="删除知识库失败")
 
 
 async def get_knowledge_file(db, file_id: str, user_id: int):
@@ -194,7 +243,7 @@ async def get_knowledge_files_by_kb(db, kb_id: str, user_id: int):
 @contextmanager
 def get_db_context():
     """用于后台任务的数据库会话上下文管理器"""
-    db = SessionLocal()
+    db = create_session()
     try:
         yield db
     except Exception:
@@ -204,10 +253,10 @@ def get_db_context():
         db.close()
 
 
+
 def process_document_async(file_id: str, kb_id: str):
     """后台处理文档（向量化）"""
     with get_db_context() as db:
-        file_record = None
         try:
             file_record = (
                 db.query(KnowledgeFile)
@@ -229,6 +278,7 @@ def process_document_async(file_id: str, kb_id: str):
                 db.commit()
                 return
 
+            document_processor = get_document_processor()
             docs = document_processor.load_pdf(str(file_path))
             splits = document_processor.split_documents(docs)
 
@@ -252,18 +302,10 @@ def process_document_async(file_id: str, kb_id: str):
             file_record.status = "completed"
             file_record.chunk_count = chunk_count
             file_record.processed_at = datetime.now()
-            db.commit()
-
-            new_count = (
-                db.query(KnowledgeFile)
-                .filter(KnowledgeFile.knowledge_base_id == kb_id, KnowledgeFile.status == "completed")
-                .count()
-            )
-
-            kb.file_count = new_count
-            kb.updated_at = datetime.now()
+            completed_count = _refresh_kb_file_count(db, kb_id)
             db.commit()
             logger.info("文档处理完成: %s, 分片数: %s", file_record.filename, chunk_count)
+            logger.info("知识库 %s 已完成文件数: %s", kb_id, completed_count)
 
         except Exception as e:
             db.rollback()
@@ -276,6 +318,7 @@ def process_document_async(file_id: str, kb_id: str):
             if isinstance(e, FileNotFoundError):
                 if refreshed_record is not None:
                     db.delete(refreshed_record)
+                    _refresh_kb_file_count(db, kb_id)
                     db.commit()
                 logger.warning("文件在后台处理期间已被删除: %s", file_id)
                 return
@@ -285,6 +328,7 @@ def process_document_async(file_id: str, kb_id: str):
                 db.commit()
             logger.error("文档处理失败: %s", e, exc_info=True)
             return
+
 
 
 def get_safe_media_type(filename: str) -> str:

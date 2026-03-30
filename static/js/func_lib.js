@@ -21,21 +21,23 @@ const mainContent = document.querySelector('.main-content');
 
 // 消息提示函数
 function showMessage(message, type = 'info') {
-    // 移除现有的消息
     const existingMessage = document.querySelector('.message-alert');
     if (existingMessage) {
         existingMessage.remove();
     }
-    
-    // 创建新消息元素
+
     const messageDiv = document.createElement('div');
     messageDiv.className = `message-alert message-${type}`;
-    messageDiv.innerHTML = `
-        <span>${message}</span>
-        <button class="message-close">&times;</button>
-    `;
-    
-    // 添加到页面
+
+    const messageSpan = document.createElement('span');
+    messageSpan.textContent = message;
+
+    const closeButton = document.createElement('button');
+    closeButton.className = 'message-close';
+    closeButton.innerHTML = '&times;';
+
+    messageDiv.appendChild(messageSpan);
+    messageDiv.appendChild(closeButton);
     document.body.appendChild(messageDiv);
     
     // 自动消失
@@ -104,13 +106,21 @@ async function loadKnowledgeBases() {
         showMessage(`加载知识库失败: ${error.message}`, 'error');
         
         // 显示错误状态
-        knowledgeList.innerHTML = `
-            <div class="error-state">
-                <i class="fas fa-exclamation-triangle"></i>
-                <p>加载知识库失败</p>
-                <button onclick="loadKnowledgeBases()" class="retry-btn">重试</button>
-            </div>
-        `;
+        knowledgeList.innerHTML = '';
+        const errorState = document.createElement('div');
+        errorState.className = 'error-state';
+        const errorIcon = document.createElement('i');
+        errorIcon.className = 'fas fa-exclamation-triangle';
+        const errorText = document.createElement('p');
+        errorText.textContent = '加载知识库失败';
+        const retryBtn = document.createElement('button');
+        retryBtn.className = 'retry-btn';
+        retryBtn.textContent = '重试';
+        retryBtn.addEventListener('click', loadKnowledgeBases);
+        errorState.appendChild(errorIcon);
+        errorState.appendChild(errorText);
+        errorState.appendChild(retryBtn);
+        knowledgeList.appendChild(errorState);
         
         // 添加错误状态样式
     }
@@ -121,72 +131,142 @@ function renderKnowledgeList(data = knowledgeData) {
     if (data.length === 0) {
         knowledgeList.style.display = 'none';
         emptyState.style.display = 'block';
-        // libCount.textContent = '0';
         return;
     }
-    
+
     knowledgeList.style.display = 'grid';
     emptyState.style.display = 'none';
-    // libCount.textContent = data.length;
-    
-    // 定义颜色数组
+    knowledgeList.innerHTML = '';
+
     const colors = [
-        '#4361ee', '#3a0ca3', '#4cc9f0', '#f72585', 
+        '#4361ee', '#3a0ca3', '#4cc9f0', '#f72585',
         '#7209b7', '#2a9d8f', '#f8961e', '#43aa8b'
     ];
-    
-    // 定义图标数组
+
     const icons = [
         'fas fa-database', 'fas fa-book', 'fas fa-code', 'fas fa-clipboard-list',
         'fas fa-comments', 'fas fa-network-wired', 'fas fa-graduation-cap', 'fas fa-file-alt'
     ];
-    
-    knowledgeList.innerHTML = data.map((item, index) => {
+
+    data.forEach((item, index) => {
         const color = colors[index % colors.length];
         const icon = icons[index % icons.length];
         const createdDate = new Date(item.created_at || item.updated_at).toLocaleDateString('zh-CN');
-        
-        return `
-            <div class="lib-card" data-id="${item.id}">
-                <div class="card-header">
-                    <div class="lib-icon" style="background: linear-gradient(135deg, ${color}, ${color}99);">
-                        <i class="${icon}"></i>
-                    </div>
-                    <div>
-                        <h3 class="lib-name">${item.name}</h3>
-                        <p class="lib-count">${item.file_count || 0} 个文档</p>
-                    </div>
-                </div>
-                
-                <div class="card-body">
-                    <p class="lib-description">${item.description || '暂无描述'}</p>
-                    <div class="lib-meta">
-                        <span><i class="far fa-calendar-alt"></i> 创建于 ${createdDate}</span>
-                        <span><i class="far fa-clock"></i> 更新: ${new Date(item.updated_at).toLocaleDateString('zh-CN')}</span>
-                    </div>
-                </div>
-                
-                <div class="card-footer">
-                    <button class="create-btn open-btn" style="padding: 8px 16px; font-size: 0.9rem;" onclick="openKnowledgeBase('${item.id}')">
-                        <i class="fas fa-folder-open"></i> 打开
-                    </button>
-                    <div class="more-container">
-                        <button class="more-btn" aria-label="更多操作">
-                            <i class="fas fa-ellipsis-v"></i>
-                        </button>
-                        <div class="dropdown-menu">
-                            <a href="#" class="dropdown-item edit" onclick="editKnowledgeBase('${item.id}')">
-                                <i class="fas fa-edit"></i> 编辑
-                            </a>
-                            <a href="#" class="dropdown-item delete" onclick="deleteLib('${item.id}')">
-                                <i class="fas fa-trash-alt"></i> 删除
-                            </a>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        `;
-    }).join('');
+        const updatedDate = new Date(item.updated_at).toLocaleDateString('zh-CN');
+
+        const card = document.createElement('div');
+        card.className = 'lib-card';
+        card.dataset.id = item.id;
+
+        const header = document.createElement('div');
+        header.className = 'card-header';
+
+        const iconWrap = document.createElement('div');
+        iconWrap.className = 'lib-icon';
+        iconWrap.style.background = `linear-gradient(135deg, ${color}, ${color}99)`;
+        const iconEl = document.createElement('i');
+        iconEl.className = icon;
+        iconWrap.appendChild(iconEl);
+
+        const headerText = document.createElement('div');
+        const nameEl = document.createElement('h3');
+        nameEl.className = 'lib-name';
+        nameEl.textContent = item.name;
+        const countEl = document.createElement('p');
+        countEl.className = 'lib-count';
+        countEl.textContent = `${item.file_count || 0} 个文档`;
+        headerText.appendChild(nameEl);
+        headerText.appendChild(countEl);
+
+        header.appendChild(iconWrap);
+        header.appendChild(headerText);
+
+        const body = document.createElement('div');
+        body.className = 'card-body';
+        const descriptionEl = document.createElement('p');
+        descriptionEl.className = 'lib-description';
+        descriptionEl.textContent = item.description || '暂无描述';
+
+        const meta = document.createElement('div');
+        meta.className = 'lib-meta';
+        const createdSpan = document.createElement('span');
+        createdSpan.textContent = `创建于 ${createdDate}`;
+        const createdIcon = document.createElement('i');
+        createdIcon.className = 'far fa-calendar-alt';
+        createdSpan.prepend(createdIcon, ' ');
+
+        const updatedSpan = document.createElement('span');
+        updatedSpan.textContent = `更新: ${updatedDate}`;
+        const updatedIcon = document.createElement('i');
+        updatedIcon.className = 'far fa-clock';
+        updatedSpan.prepend(updatedIcon, ' ');
+
+        meta.appendChild(createdSpan);
+        meta.appendChild(updatedSpan);
+        body.appendChild(descriptionEl);
+        body.appendChild(meta);
+
+        const footer = document.createElement('div');
+        footer.className = 'card-footer';
+
+        const openBtn = document.createElement('button');
+        openBtn.className = 'create-btn open-btn';
+        openBtn.style.padding = '8px 16px';
+        openBtn.style.fontSize = '0.9rem';
+        openBtn.addEventListener('click', () => openKnowledgeBase(item.id));
+        const openIcon = document.createElement('i');
+        openIcon.className = 'fas fa-folder-open';
+        openBtn.appendChild(openIcon);
+        openBtn.appendChild(document.createTextNode(' 打开'));
+
+        const moreContainer = document.createElement('div');
+        moreContainer.className = 'more-container';
+        const moreBtn = document.createElement('button');
+        moreBtn.className = 'more-btn';
+        moreBtn.setAttribute('aria-label', '更多操作');
+        const moreIcon = document.createElement('i');
+        moreIcon.className = 'fas fa-ellipsis-v';
+        moreBtn.appendChild(moreIcon);
+
+        const dropdown = document.createElement('div');
+        dropdown.className = 'dropdown-menu';
+
+        const editLink = document.createElement('a');
+        editLink.href = '#';
+        editLink.className = 'dropdown-item edit';
+        editLink.addEventListener('click', (event) => {
+            event.preventDefault();
+            editKnowledgeBase(item.id);
+        });
+        const editIcon = document.createElement('i');
+        editIcon.className = 'fas fa-edit';
+        editLink.appendChild(editIcon);
+        editLink.appendChild(document.createTextNode(' 编辑'));
+
+        const deleteLink = document.createElement('a');
+        deleteLink.href = '#';
+        deleteLink.className = 'dropdown-item delete';
+        deleteLink.addEventListener('click', (event) => {
+            event.preventDefault();
+            deleteLib(item.id);
+        });
+        const deleteIcon = document.createElement('i');
+        deleteIcon.className = 'fas fa-trash-alt';
+        deleteLink.appendChild(deleteIcon);
+        deleteLink.appendChild(document.createTextNode(' 删除'));
+
+        dropdown.appendChild(editLink);
+        dropdown.appendChild(deleteLink);
+        moreContainer.appendChild(moreBtn);
+        moreContainer.appendChild(dropdown);
+        footer.appendChild(openBtn);
+        footer.appendChild(moreContainer);
+
+        card.appendChild(header);
+        card.appendChild(body);
+        card.appendChild(footer);
+        knowledgeList.appendChild(card);
+    });
 }
 
 // 打开知识库详情
@@ -397,39 +477,81 @@ async function editKnowledgeBase(kbId) {
 
 // 显示编辑模态框
 function showEditModal(knowledgeBase) {
-    // 创建编辑模态框
     const editModal = document.createElement('div');
     editModal.className = 'modal active';
     editModal.id = 'editModal';
-    editModal.innerHTML = `
-        <div class="modal-content">
-            <div class="modal-header">
-                <h3 class="modal-title">编辑知识库</h3>
-                <button class="close-btn" id="closeEditModalBtn">
-                    <i class="fas fa-times"></i>
-                </button>
-            </div>
-            
-            <form id="editForm">
-                <input type="hidden" id="editKbId" value="${knowledgeBase.id}">
-                <div class="form-group">
-                    <label for="editLibName">知识库名称</label>
-                    <input type="text" id="editLibName" value="${knowledgeBase.name}" placeholder="请输入知识库名称" required>
-                </div>
-                
-                <div class="form-group">
-                    <label for="editLibDescription">描述</label>
-                    <textarea id="editLibDescription" placeholder="请描述这个知识库的主要内容和用途">${knowledgeBase.description || ''}</textarea>
-                </div>
-                
-                <div class="modal-actions">
-                    <button type="button" class="btn-secondary" id="cancelEditBtn">取消</button>
-                    <button type="submit" class="btn-primary">保存更改</button>
-                </div>
-            </form>
-        </div>
-    `;
-    
+
+    const modalContent = document.createElement('div');
+    modalContent.className = 'modal-content';
+
+    const modalHeader = document.createElement('div');
+    modalHeader.className = 'modal-header';
+    const modalTitle = document.createElement('h3');
+    modalTitle.className = 'modal-title';
+    modalTitle.textContent = '编辑知识库';
+    const closeBtn = document.createElement('button');
+    closeBtn.className = 'close-btn';
+    closeBtn.id = 'closeEditModalBtn';
+    closeBtn.innerHTML = '<i class="fas fa-times"></i>';
+    modalHeader.appendChild(modalTitle);
+    modalHeader.appendChild(closeBtn);
+
+    const editForm = document.createElement('form');
+    editForm.id = 'editForm';
+
+    const hiddenInput = document.createElement('input');
+    hiddenInput.type = 'hidden';
+    hiddenInput.id = 'editKbId';
+    hiddenInput.value = knowledgeBase.id;
+
+    const nameGroup = document.createElement('div');
+    nameGroup.className = 'form-group';
+    const nameLabel = document.createElement('label');
+    nameLabel.htmlFor = 'editLibName';
+    nameLabel.textContent = '知识库名称';
+    const nameInput = document.createElement('input');
+    nameInput.type = 'text';
+    nameInput.id = 'editLibName';
+    nameInput.placeholder = '请输入知识库名称';
+    nameInput.required = true;
+    nameInput.value = knowledgeBase.name;
+    nameGroup.appendChild(nameLabel);
+    nameGroup.appendChild(nameInput);
+
+    const descGroup = document.createElement('div');
+    descGroup.className = 'form-group';
+    const descLabel = document.createElement('label');
+    descLabel.htmlFor = 'editLibDescription';
+    descLabel.textContent = '描述';
+    const descInput = document.createElement('textarea');
+    descInput.id = 'editLibDescription';
+    descInput.placeholder = '请描述这个知识库的主要内容和用途';
+    descInput.value = knowledgeBase.description || '';
+    descGroup.appendChild(descLabel);
+    descGroup.appendChild(descInput);
+
+    const actions = document.createElement('div');
+    actions.className = 'modal-actions';
+    const cancelBtn = document.createElement('button');
+    cancelBtn.type = 'button';
+    cancelBtn.className = 'btn-secondary';
+    cancelBtn.id = 'cancelEditBtn';
+    cancelBtn.textContent = '取消';
+    const submitBtn = document.createElement('button');
+    submitBtn.type = 'submit';
+    submitBtn.className = 'btn-primary';
+    submitBtn.textContent = '保存更改';
+    actions.appendChild(cancelBtn);
+    actions.appendChild(submitBtn);
+
+    editForm.appendChild(hiddenInput);
+    editForm.appendChild(nameGroup);
+    editForm.appendChild(descGroup);
+    editForm.appendChild(actions);
+
+    modalContent.appendChild(modalHeader);
+    modalContent.appendChild(editForm);
+    editModal.appendChild(modalContent);
     document.body.appendChild(editModal);
     
     // 添加编辑模态框样式（如果不存在）
@@ -637,44 +759,50 @@ function initEventListeners() {
 
 
 function showAboutModal() {
-    // 创建关于模态框
-    // const aboutModal = document.createElement('div');
-    mainContent.innerHTML = `
-    <div class="about-content">
-        <div class="about-section">
-            <h3>关于 AI 智能测试系统</h3>
-            <p>本系统是一个基于人工智能技术的测试辅助平台，通过集成检索增强生成（RAG）技术，使得系统能够从上传的知识库文档中提取关键信息，并结合大语言模型生成高质量的测试相关内容，帮助测试人员更高效地进行测试需求分析、测试用例生成和问题排查。</p>
-            <h4>主要功能</h4>
-            <p>需求梳理与测试策略设计</p>
-            <p>测试场景和测试点分析</p>
-            <p>基于知识库的测试用例生成</p>
-            <p>产品问题排查与用户手册阅读</p>
-            <p></p>
-            <h4>本系统主要基于Python 的 FastAPI 框架和 LangChain 构建，核心 RAG 功能包括：</h4>
-                <p>* 文档读取及分块</p>
-                <p>* 向量化存储</p>
-                <p>* 基于语义相似度的上下文检索</p>
-                <p>* 检索增强的问答生成</p>
-                <p>* 多知识库检索</p>
-            <p></p>
-            <h4>在开发此系统时，意识到当前所做的功能仍有很大的优化空间，因此在此列个 TODO List，后续有时间会继续完善。</h4>
-                <p>- 增加更多文档源的支持，如数据库、API 文档等</p>
-                <p>- 优化向量化存储和检索算法，提高响应速度和准确性</p>
-                <p>- 测试数据生成：基于知识库内容生成测试数据，例如根据接口文档生成符合规范的请求参数</p>
-                <p>- 保存生成的测试用例，记录版本</p>
-                <p>- 权限管理：区分不同用户或角色,细分知识库的访问和操作权限</p>
-                <p>- AI辅助测试用例评审，检查测试用例的完整性和覆盖度</p>
-                <p>- 自动将生成的测试用例同步到测试管理工具（如TestRail、Jira）</p>
-                <p>- 允许用户自定义测试用例模板、生成规则</p>
-                <p>- 集成更多AI模型，提升生成质量</p>
-            <p></p>
-            <p>本项目已上传到 <a href="https://github.com/ChiufungLee/FastAPI_Local_RAG" class="email-link"> GitHub </a>，欢迎前往查看和使用~</p>
-            <p>如果您在使用的过程中有任何建议或反馈，欢迎随时联系我，邮箱 <span style="color:blue;">lzfdd@937.com</span> 。</p>
-            <p></p>
-        </div>
-    </div>
-    `;
+    mainContent.innerHTML = '';
 
+    const aboutContent = document.createElement('div');
+    aboutContent.className = 'about-content';
+
+    const aboutSection = document.createElement('div');
+    aboutSection.className = 'about-section';
+
+    const contentBlocks = [
+        { tag: 'h3', text: '关于 AI 智能测试系统' },
+        { tag: 'p', text: '本系统是一个基于人工智能技术的测试辅助平台，通过集成检索增强生成（RAG）技术，使得系统能够从上传的知识库文档中提取关键信息，并结合大语言模型生成高质量的测试相关内容，帮助测试人员更高效地进行测试需求分析、测试用例生成和问题排查。' },
+        { tag: 'h4', text: '主要功能' },
+        { tag: 'p', text: '需求梳理与测试策略设计' },
+        { tag: 'p', text: '测试场景和测试点分析' },
+        { tag: 'p', text: '基于知识库的测试用例生成' },
+        { tag: 'p', text: '产品问题排查与用户手册阅读' },
+        { tag: 'h4', text: '本系统主要基于Python 的 FastAPI 框架和 LangChain 构建，核心 RAG 功能包括：' },
+        { tag: 'p', text: '* 文档读取及分块' },
+        { tag: 'p', text: '* 向量化存储' },
+        { tag: 'p', text: '* 基于语义相似度的上下文检索' },
+        { tag: 'p', text: '* 检索增强的问答生成' },
+        { tag: 'p', text: '* 多知识库检索' },
+        { tag: 'h4', text: '在开发此系统时，意识到当前所做的功能仍有很大的优化空间，因此在此列个 TODO List，后续有时间会继续完善。' },
+        { tag: 'p', text: '- 增加更多文档源的支持，如数据库、API 文档等' },
+        { tag: 'p', text: '- 优化向量化存储和检索算法，提高响应速度和准确性' },
+        { tag: 'p', text: '- 测试数据生成：基于知识库内容生成测试数据，例如根据接口文档生成符合规范的请求参数' },
+        { tag: 'p', text: '- 保存生成的测试用例，记录版本' },
+        { tag: 'p', text: '- 权限管理：区分不同用户或角色,细分知识库的访问和操作权限' },
+        { tag: 'p', text: '- AI辅助测试用例评审，检查测试用例的完整性和覆盖度' },
+        { tag: 'p', text: '- 自动将生成的测试用例同步到测试管理工具（如TestRail、Jira）' },
+        { tag: 'p', text: '- 允许用户自定义测试用例模板、生成规则' },
+        { tag: 'p', text: '- 集成更多AI模型，提升生成质量' },
+        { tag: 'p', text: '本项目基于 FastAPI、LangChain 和本地知识库检索能力构建。' },
+        { tag: 'p', text: '本地运行后可通过 /docs 查看接口文档，并通过页面完成知识库管理与聊天测试。' },
+    ];
+
+    contentBlocks.forEach(({ tag, text }) => {
+        const element = document.createElement(tag);
+        element.textContent = text;
+        aboutSection.appendChild(element);
+    });
+
+    aboutContent.appendChild(aboutSection);
+    mainContent.appendChild(aboutContent);
 }
 
 // 初始化应用

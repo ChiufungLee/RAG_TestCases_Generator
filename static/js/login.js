@@ -3,9 +3,27 @@ class LoginManager {
         this.baseURL = '/';
         this.initialize();
     }
-    
+
     initialize() {
         this.bindEvents();
+    }
+
+    async parseResponse(response) {
+        const contentType = response.headers.get('content-type') || '';
+        if (contentType.includes('application/json')) {
+            try {
+                return await response.json();
+            } catch {
+                return null;
+            }
+        }
+
+        try {
+            const text = await response.text();
+            return text ? { detail: text } : null;
+        } catch {
+            return null;
+        }
     }
     
     bindEvents() {
@@ -42,15 +60,12 @@ class LoginManager {
             formData.append('username', username);
             formData.append('password', password);
 
-            const response = await fetch(`login`, {
+            const response = await fetch('/login', {
                 method: 'POST',
                 headers: {
-                    'Content-Type': 'application/json',
+                    'Content-Type': 'application/x-www-form-urlencoded',
                 },
-                body: JSON.stringify({
-                    username: username,
-                    password: password
-                })
+                body: formData.toString()
             });
 
             // 检查是否被重定向
@@ -60,18 +75,17 @@ class LoginManager {
                 return;
             }
 
-            // 检查认证状态
+            const data = await this.parseResponse(response);
+
             if (response.status === 401) {
                 this.setLoading(false);
-                this.showError('用户名或密码错误');
+                this.showError(data?.detail || '用户名或密码错误');
                 return;
             }
-            console.log('登录响应数据:', response);
-            const data = await response.json();
-            
+
             if (!response.ok) {
                 this.setLoading(false);
-                this.showError(data.detail || '登录失败');
+                this.showError(data?.detail || '登录失败');
                 return;
             }
             

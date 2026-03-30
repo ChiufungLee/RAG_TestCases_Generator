@@ -1,43 +1,61 @@
+import functools
 import logging
 import os
 import uuid
 from typing import List, Optional
 
 import chromadb
-from dotenv import load_dotenv
 from langchain_community.document_loaders import PyPDFLoader
 from langchain_core.documents import Document
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from openai import OpenAI
 
-# 配置日志
-logger = logging.getLogger(__name__)
-
-load_dotenv()
-
-ALIYUN_API_KEY = os.getenv("ALIYUN_API_KEY")
-ALIYUN_BASE_URL = os.getenv("ALIYUN_BASE_URL")
-RAG_DB_PATH = os.getenv("RAG_DB_PATH")
-UPLOAD_DIR = os.getenv("UPLOAD_DIR", "./uploads")
-TEMP_UPLOAD_DIR = os.getenv("TEMP_UPLOAD_DIR", "./temp_uploads")
-
-# 确保上传目录存在
-os.makedirs(UPLOAD_DIR, exist_ok=True)
-os.makedirs(TEMP_UPLOAD_DIR, exist_ok=True)
-
-client = OpenAI(
-    api_key=ALIYUN_API_KEY,
-    base_url=ALIYUN_BASE_URL,
+from config import (
+    get_aliyun_api_key,
+    get_aliyun_base_url,
+    get_rag_db_path,
+    get_temp_upload_dir,
+    get_upload_dir,
 )
 
-# 初始化 ChromaDB 客户端
-chromadb_client = chromadb.PersistentClient(path=RAG_DB_PATH)
+logger = logging.getLogger(__name__)
+
+
+
+def ensure_storage_dirs():
+    os.makedirs(get_upload_dir(), exist_ok=True)
+    os.makedirs(get_temp_upload_dir(), exist_ok=True)
+
+
+@functools.lru_cache(maxsize=1)
+def get_openai_client() -> OpenAI:
+    return OpenAI(
+        api_key=get_aliyun_api_key(),
+        base_url=get_aliyun_base_url(),
+    )
+
+
+@functools.lru_cache(maxsize=1)
+def get_chromadb_client():
+    ensure_storage_dirs()
+    return chromadb.PersistentClient(path=get_rag_db_path())
+
+
+
+def reset_document_processor_state():
+    get_openai_client.cache_clear()
+    get_chromadb_client.cache_clear()
+    get_document_processor.cache_clear()
 
 
 class DocumentProcessor:
-    def __init__(self):
-        self.client = client
-        self.chromadb_client = chromadb_client
+    @property
+    def client(self) -> OpenAI:
+        return get_openai_client()
+
+    @property
+    def chromadb_client(self):
+        return get_chromadb_client()
 
     def embed(self, text: str) -> List[float]:
         """生成文本的嵌入向量"""
@@ -116,6 +134,17 @@ class DocumentProcessor:
             logger.error("保存到ChromaDB失败: %s", e, exc_info=True)
             raise
 
+    def delete_documents_by_file_id(self, collection_name: str, file_id: str) -> bool:
+        """按文件ID删除ChromaDB中的文档分片"""
+        try:
+            collection = self.chromadb_client.get_collection(name=collection_name)
+            collection.delete(where={"file_id": file_id})
+            logger.info("成功删除集合 %s 中 file_id=%s 的文档分片", collection_name, file_id)
+            return True
+        except Exception as e:
+            logger.error("删除文档分片失败: %s", e, exc_info=True)
+            return False
+
     def delete_collection(self, collection_name: str) -> bool:
         """删除ChromaDB集合"""
         try:
@@ -140,5 +169,8 @@ class DocumentProcessor:
             return None
 
 
-# 全局处理器实例
-document_processor = DocumentProcessor()
+
+@functools.lru_cache(maxsize=1)
+def get_document_processor() -> DocumentProcessor:
+    ensure_storage_dirs()
+    return DocumentProcessor()

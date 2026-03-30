@@ -12,7 +12,7 @@ templates = Jinja2Templates(directory="templates")
 
 @router.get("/register", response_class=HTMLResponse)
 async def register_page(request: Request):
-    return templates.TemplateResponse("register.html", {"request": request})
+    return templates.TemplateResponse(request, "register.html")
 
 
 @router.post("/register")
@@ -25,6 +25,7 @@ async def register_user(
     register_result = await AuthService.create_user(db, username, password)
     if not register_result["success"]:
         return templates.TemplateResponse(
+            request,
             "register.html",
             {"request": request, "error": register_result["error"]},
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -36,14 +37,18 @@ async def register_user(
 
 @router.get("/login", response_class=HTMLResponse)
 async def login_page(request: Request):
-    return templates.TemplateResponse("login.html", {"request": request})
+    return templates.TemplateResponse(request, "login.html")
 
 
 @router.get("/", response_class=HTMLResponse)
 async def main_page(request: Request):
     username = request.session.get("username")
     if username is None:
-        return templates.TemplateResponse("login.html", {"request": request, "error": "用户会话已失效，请重新登录"})
+        return templates.TemplateResponse(
+            request,
+            "login.html",
+            {"request": request, "error": "用户会话已失效，请重新登录"},
+        )
     return RedirectResponse(url="/chat", status_code=status.HTTP_303_SEE_OTHER)
 
 
@@ -57,6 +62,7 @@ async def login_user(
     auth_result = await AuthService.login_user(db, username, password)
     if not auth_result["success"]:
         return templates.TemplateResponse(
+            request,
             "login.html",
             {"request": request, "error": "用户名或密码错误"},
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -70,7 +76,7 @@ async def login_user(
     return response
 
 
-@router.get("/logout", response_class=HTMLResponse)
+@router.post("/logout")
 async def logout(request: Request):
     request.session.clear()
     return RedirectResponse(url="/login?logout=true", status_code=status.HTTP_303_SEE_OTHER)

@@ -2,8 +2,9 @@ import asyncio
 import functools
 import json
 import logging
-import os
 from typing import AsyncGenerator
+
+from config import get_deepseek_api_key
 
 from sqlalchemy import func
 from sqlalchemy.orm import Session
@@ -18,7 +19,7 @@ logger = logging.getLogger(__name__)
 @functools.lru_cache(maxsize=1)
 def _get_cached_llm_model():
     """初始化并缓存大语言模型实例"""
-    api_key = os.getenv("DEEPSEEK_API_KEY", "")
+    api_key = get_deepseek_api_key()
 
     model = init_chat_model(
         model="deepseek-chat",
@@ -31,6 +32,11 @@ def _get_cached_llm_model():
     return model
 
 
+
+def reset_llm_state():
+    _get_cached_llm_model.cache_clear()
+
+
 async def call_llm_model(prompt: str) -> AsyncGenerator[str, None]:
     """异步调用LLM模型并流式返回token（优化后）"""
     model = _get_cached_llm_model()
@@ -41,7 +47,6 @@ async def call_llm_model(prompt: str) -> AsyncGenerator[str, None]:
             async for token in model.astream(prompt):
                 yield token.content
                 full_response += token.content
-                await asyncio.sleep(0.001)
 
     except asyncio.TimeoutError:
         yield "[错误：生成响应超时]"
@@ -57,27 +62,28 @@ async def call_llm_model(prompt: str) -> AsyncGenerator[str, None]:
 async def generate_response(request, prompt, conversation_id, is_new_conversation, message, db):
     ai_response = ""
     full_response_saved = False
+    completed = False
 
     try:
         words = call_llm_model(prompt)
         async for token in words:
             if await request.is_disconnected():
                 logger.info("客户端已断开连接")
-                break
+                return
 
             ai_response += token
             yield f"data: {json.dumps({'token': token})}\n\n"
-            await asyncio.sleep(0.02)
+        completed = True
     except GeneratorExit:
         logger.info("流式响应被中断")
     finally:
         logger.info("AI响应结束，长度: %s", len(ai_response))
 
-        if ai_response and not full_response_saved:
+        if completed and ai_response and not full_response_saved:
             await save_ai_response(ai_response, conversation_id, db)
             full_response_saved = True
             yield "data: [DONE]\n\n"
-        if is_new_conversation:
+        if completed and is_new_conversation:
             await generate_and_update_title(message, conversation_id, db)
 
 

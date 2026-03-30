@@ -1,6 +1,5 @@
 import functools
 import logging
-import os
 from threading import Lock
 from typing import Any, Dict, List
 
@@ -10,13 +9,19 @@ from langchain_core.documents import Document
 from openai import OpenAI
 from sqlalchemy.orm import Session
 
+from config import get_aliyun_api_key, get_aliyun_base_url, get_rag_db_path
 from models.database import get_db
 from services import knowlege_service
 
 logger = logging.getLogger(__name__)
 
-ALIYUN_API_KEY = os.getenv("ALIYUN_API_KEY")
-ALIYUN_BASE_URL = os.getenv("ALIYUN_BASE_URL")
+
+
+def get_embedding_client() -> OpenAI:
+    return OpenAI(
+        api_key=get_aliyun_api_key(),
+        base_url=get_aliyun_base_url(),
+    )
 
 
 class ChromaRetriever:
@@ -33,10 +38,7 @@ class ChromaRetriever:
         self.model_name = model_name
         self.embedding_dimensions = embedding_dimensions
         self.encoding_format = encoding_format
-        self.openai_client = OpenAI(
-            api_key=ALIYUN_API_KEY,
-            base_url=ALIYUN_BASE_URL,
-        )
+        self.openai_client = get_embedding_client()
         self.collection = self.chroma_client.get_collection(name=collection_name)
 
     async def embed(self, text: str) -> List[float]:
@@ -84,8 +86,10 @@ class ChromaRetriever:
     @staticmethod
     async def clear_retriever_cache(kb_id: str):
         with _retriever_lock:
-            if kb_id in _retriever_cache:
-                del _retriever_cache[kb_id]
+            keys_to_delete = [key for key in _retriever_cache if key == kb_id or key.endswith(f":{kb_id}")]
+            for key in keys_to_delete:
+                del _retriever_cache[key]
+            if keys_to_delete:
                 logger.info("已清除知识库 %s 的检索器缓存", kb_id)
                 return True
             return False
@@ -101,11 +105,25 @@ _retriever_lock = Lock()
 _retriever_cache = {}
 
 
+def _build_kb_cache_key(kb_id: str, user_id: int | None) -> str:
+    if user_id is None:
+        return kb_id
+    return f"{user_id}:{kb_id}"
+
+
 @functools.lru_cache(maxsize=2)
 def _get_cached_chroma_client():
-    rag_db_path = os.getenv("RAG_DB_PATH", "./chroma_db")
+    rag_db_path = get_rag_db_path()
     logger.info("初始化Chroma客户端，路径: %s", rag_db_path)
     return chromadb.PersistentClient(path=rag_db_path)
+
+
+
+def reset_retriever_state():
+    with _retriever_lock:
+        _retriever_cache.clear()
+    _get_cached_chroma_client.cache_clear()
+
 
 
 def get_rag_retriever(scenario: str):
@@ -123,52 +141,67 @@ def get_rag_retriever(scenario: str):
         if scenario in _retriever_cache:
             return _retriever_cache[scenario]
 
-        try:
-            chroma_client = _get_cached_chroma_client()
-            retriever = ChromaRetriever(
-                collection_name=collection_name,
-                chroma_client=chroma_client,
-                model_name="text-embedding-v4",
-            )
-            _retriever_cache[scenario] = retriever
-            logger.info("已为场景 %s 创建并缓存检索器", scenario)
-            return retriever
-        except Exception as e:
-            logger.error("创建 %s 场景检索器失败: %s", scenario, e, exc_info=True)
-            return None
-
-
-async def get_rag_retriever_by_kb(kb_id: str = "", db: Session = Depends(get_db), user_id: int | None = None):
-    with _retriever_lock:
-        if kb_id in _retriever_cache:
-            logger.info("从缓存获取知识库 %s 的检索器", kb_id)
-            return _retriever_cache[kb_id]
-
     try:
-        kb = await knowlege_service.get_knowledge_base_by_id(db=db, kb_id=kb_id, user_id=user_id)
-        if not kb:
-            return None
+        chroma_client = _get_cached_chroma_client()
+        retriever = ChromaRetriever(
+            collection_name=collection_name,
+            chroma_client=chroma_client,
+            model_name="text-embedding-v4",
+        )
+        with _retriever_lock:
+            _retriever_cache[scenario] = retriever
+        logger.info("已为场景 %s 创建并缓存检索器", scenario)
+        return retriever
+    except Exception as e:
+        logger.error("创建 %s 场景检索器失败: %s", scenario, e, exc_info=True)
+        return None
 
-        collection_name = kb.collection_name
+
+async def get_rag_retriever_by_kb(
+    kb_or_id,
+    db: Session = Depends(get_db),
+    user_id: int | None = None,
+):
+    try:
+        if isinstance(kb_or_id, str):
+            kb_id = kb_or_id
+            cache_key = _build_kb_cache_key(kb_id, user_id)
+            with _retriever_lock:
+                if cache_key in _retriever_cache:
+                    logger.info("从缓存获取知识库 %s 的检索器", kb_id)
+                    return _retriever_cache[cache_key]
+
+            kb = await knowlege_service.get_knowledge_base_by_id(db=db, kb_id=kb_id, user_id=user_id)
+            if not kb:
+                return None
+        else:
+            kb = kb_or_id
+            kb_id = kb.id
+            cache_key = _build_kb_cache_key(kb_id, user_id)
+            with _retriever_lock:
+                if cache_key in _retriever_cache:
+                    logger.info("从缓存获取知识库 %s 的检索器", kb_id)
+                    return _retriever_cache[cache_key]
+
         chroma_client = _get_cached_chroma_client()
 
         try:
-            collection = chroma_client.get_collection(name=collection_name)
+            collection = chroma_client.get_collection(name=kb.collection_name)
             logger.info("知识库 %s 的向量集合存在，包含 %s 个向量", kb_id, collection.count())
         except Exception as e:
             logger.error("知识库 %s 的向量集合不存在: %s", kb_id, e)
             return None
 
         retriever = ChromaRetriever(
-            collection_name=collection_name,
+            collection_name=kb.collection_name,
             chroma_client=chroma_client,
             model_name="text-embedding-v4",
         )
 
         with _retriever_lock:
-            _retriever_cache[kb_id] = retriever
+            _retriever_cache[cache_key] = retriever
 
-        logger.info("已为知识库 %s 创建检索器，集合名称: %s", kb_id, collection_name)
+        logger.info("已为知识库 %s 创建检索器，集合名称: %s", kb_id, kb.collection_name)
         return retriever
     except Exception as e:
         logger.error("创建知识库 %s 的检索器失败: %s", kb_id, e, exc_info=True)

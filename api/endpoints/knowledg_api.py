@@ -2,27 +2,20 @@ import logging
 import os
 from typing import List
 
-from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, Request, UploadFile
-from fastapi.responses import FileResponse, HTMLResponse
+from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, Request, UploadFile, status
+from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 
 from models.database import get_db
-from models.knowledge_models import KnowledgeBase
 from schemas.knowledge_schemas import KnowledgeBaseCreate, KnowledgeBaseResponse, KnowledgeBaseUpdate
 from services import knowlege_service
-from utils.file_handle import document_processor
+from services.auth_service import AuthService
+from utils.file_handle import get_document_processor
 
 app = APIRouter()
 templates = Jinja2Templates(directory="templates")
 logger = logging.getLogger(__name__)
-
-
-def _get_current_user_id(request: Request) -> int:
-    user_id = request.session.get("user_id")
-    if not user_id:
-        raise HTTPException(status_code=401, detail="未登录")
-    return user_id
 
 
 @app.post("/api/knowledge-bases/", response_model=KnowledgeBaseResponse)
@@ -31,12 +24,14 @@ async def create_knowledge_base(
     kb_data: KnowledgeBaseCreate,
     db: Session = Depends(get_db),
 ):
-    user_id = _get_current_user_id(request)
+    user_id = AuthService.get_optional_request_user_id(request)
+    if user_id is None:
+        return AuthService.unauthorized_json_response()
     create_knowledge = await knowlege_service.create_knowledge_record(db, kb_data, owner_user_id=user_id)
     if not create_knowledge["success"]:
         raise HTTPException(status_code=400, detail=create_knowledge["message"])
 
-    document_processor.chromadb_client.get_or_create_collection(
+    get_document_processor().chromadb_client.get_or_create_collection(
         name=create_knowledge["knowledge_base"].collection_name
     )
 
@@ -45,20 +40,34 @@ async def create_knowledge_base(
 
 @app.get("/api/knowledge-bases/", response_model=List[KnowledgeBaseResponse])
 async def list_knowledge_bases(request: Request, db: Session = Depends(get_db)):
-    user_id = _get_current_user_id(request)
+    user_id = AuthService.get_optional_request_user_id(request)
+    if user_id is None:
+        return AuthService.unauthorized_json_response()
     kbs = await knowlege_service.get_all_knowledge(db, user_id=user_id)
     return kbs
 
 
 @app.get("/knowledge-detail", response_class=HTMLResponse)
-async def knowledge_detail(request: Request, kb_id: str):
-    kb_id = request.session.get("kb_id", kb_id)
-    return templates.TemplateResponse("knowledge_detail.html", {"request": request, "kb_id": kb_id})
+async def knowledge_detail(request: Request, kb_id: str | None = None, db: Session = Depends(get_db)):
+    if request.session.get("username") is None:
+        return RedirectResponse(url="/login", status_code=status.HTTP_303_SEE_OTHER)
+
+    user_id = AuthService.require_request_user_id(request)
+    if not kb_id:
+        raise HTTPException(status_code=404, detail="知识库不存在")
+
+    kb = await knowlege_service.get_knowledge_base_by_id(kb_id=kb_id, db=db, user_id=user_id)
+    if not kb:
+        raise HTTPException(status_code=404, detail="知识库不存在")
+
+    return templates.TemplateResponse(request, "knowledge_detail.html", {"kb_id": kb_id})
 
 
 @app.get("/api/knowledge-bases/{kb_id}", response_model=KnowledgeBaseResponse)
 async def get_knowledge_base(request: Request, kb_id: str, db: Session = Depends(get_db)):
-    user_id = _get_current_user_id(request)
+    user_id = AuthService.get_optional_request_user_id(request)
+    if user_id is None:
+        return AuthService.unauthorized_json_response()
     kb = await knowlege_service.get_knowledge_base_by_id(kb_id=kb_id, db=db, user_id=user_id)
     if not kb:
         raise HTTPException(status_code=404, detail="知识库不存在")
@@ -72,7 +81,9 @@ async def update_knowledge(
     kb_data: KnowledgeBaseUpdate,
     db: Session = Depends(get_db),
 ):
-    user_id = _get_current_user_id(request)
+    user_id = AuthService.get_optional_request_user_id(request)
+    if user_id is None:
+        return AuthService.unauthorized_json_response()
     kb = await knowlege_service.update_knowledge_base(db, kb_id, kb_data, user_id=user_id)
     if not kb:
         raise HTTPException(status_code=404, detail="知识库不存在")
@@ -87,14 +98,18 @@ async def upload_document(
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
 ):
-    user_id = _get_current_user_id(request)
+    user_id = AuthService.get_optional_request_user_id(request)
+    if user_id is None:
+        return AuthService.unauthorized_json_response()
     result = await knowlege_service.upload_document(kb_id, file, background_tasks, db, user_id=user_id)
     return result
 
 
 @app.delete("/api/knowledge-bases/{kb_id}")
 async def delete_knowledge(request: Request, kb_id: str, db: Session = Depends(get_db)):
-    user_id = _get_current_user_id(request)
+    user_id = AuthService.get_optional_request_user_id(request)
+    if user_id is None:
+        return AuthService.unauthorized_json_response()
     kb = await knowlege_service.delete_knowledge_base(db, kb_id, user_id=user_id)
     return kb
 
@@ -106,7 +121,9 @@ async def delete_file(
     file_id: str,
     db: Session = Depends(get_db),
 ):
-    user_id = _get_current_user_id(request)
+    user_id = AuthService.get_optional_request_user_id(request)
+    if user_id is None:
+        return AuthService.unauthorized_json_response()
     kb = await knowlege_service.get_knowledge_base_by_id(kb_id=kb_id, db=db, user_id=user_id)
     if not kb:
         raise HTTPException(status_code=404, detail="知识库不存在")
@@ -115,26 +132,20 @@ async def delete_file(
     if not file_record or file_record.knowledge_base_id != kb_id:
         raise HTTPException(status_code=404, detail="文件不存在")
 
-    full_path = knowlege_service.resolve_upload_path(file_record.file_path)
-
-    db.delete(file_record)
-    if os.path.exists(full_path):
-        os.remove(full_path)
-
-    kb.file_count = max((kb.file_count or 1) - 1, 0)
-    db.commit()
-
+    await knowlege_service.delete_knowledge_file(db, kb, file_record)
     return {"message": "文件删除成功"}
 
 
 @app.get("/api/knowledge-bases/{kb_id}/collection-info")
 async def get_collection_info(request: Request, kb_id: str, db: Session = Depends(get_db)):
-    user_id = _get_current_user_id(request)
+    user_id = AuthService.get_optional_request_user_id(request)
+    if user_id is None:
+        return AuthService.unauthorized_json_response()
     kb = await knowlege_service.get_knowledge_base_by_id(kb_id=kb_id, db=db, user_id=user_id)
     if not kb:
         raise HTTPException(status_code=404, detail="知识库不存在")
 
-    info = document_processor.get_collection_info(kb.collection_name)
+    info = get_document_processor().get_collection_info(kb.collection_name)
     if not info:
         raise HTTPException(status_code=404, detail="向量集合不存在")
 
@@ -143,7 +154,9 @@ async def get_collection_info(request: Request, kb_id: str, db: Session = Depend
 
 @app.get("/api/knowledge-bases/{kb_id}/files")
 async def get_knowledge_files(request: Request, kb_id: str, db: Session = Depends(get_db)):
-    user_id = _get_current_user_id(request)
+    user_id = AuthService.get_optional_request_user_id(request)
+    if user_id is None:
+        return AuthService.unauthorized_json_response()
     kb, files = await knowlege_service.get_knowledge_files_by_kb(db, kb_id=kb_id, user_id=user_id)
     if not kb:
         raise HTTPException(status_code=404, detail="知识库不存在")
@@ -153,7 +166,9 @@ async def get_knowledge_files(request: Request, kb_id: str, db: Session = Depend
 
 @app.get("/api/files/{file_id}/preview")
 async def preview_file(request: Request, file_id: str, db: Session = Depends(get_db)):
-    user_id = _get_current_user_id(request)
+    user_id = AuthService.get_optional_request_user_id(request)
+    if user_id is None:
+        return AuthService.unauthorized_json_response()
     try:
         file_record = await knowlege_service.get_knowledge_file(db, file_id=file_id, user_id=user_id)
         if not file_record:

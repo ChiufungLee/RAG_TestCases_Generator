@@ -41,21 +41,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     await loadKnowledgeBases();
 
     const selectElement = document.getElementById('knowledgeBaseSelect');
-    let firstKbId = null;
-    
-    if (selectElement.options.length > 0) {
-        // 选项索引0是默认选项（如"请选择知识库"），所以第一个知识库在索引1
-        firstKbId = selectElement.options[0].value;
-        appState.currentKnowledgeBaseId = firstKbId;
-        
-        // 2. 同步下拉框选中状态
-        selectElement.value = firstKbId;
-        
-        console.log(`自动设置当前知识库: ${firstKbId}`);
-    } else {
-        console.log("没有可用的知识库");
-        appState.currentKnowledgeBaseId = null;
-    }
+    appState.currentKnowledgeBaseId = selectElement.value || null;
 
     await loadHistory(appState.currentScenario, appState.currentKnowledgeBaseId);
     
@@ -69,21 +55,14 @@ document.addEventListener('DOMContentLoaded', async () => {
     
     // 监听知识库选择变化
     document.getElementById('knowledgeBaseSelect').addEventListener('change', async function() {
-        const selectedKbId = this.value;
-        // 更新应用状态
+        const selectedKbId = this.value || null;
+
         appState.currentKnowledgeBaseId = selectedKbId;
         appState.currentConversation = null;
-        // 刷新历史记录
         await loadHistory(appState.currentScenario, selectedKbId);
-        
-        // 如果有当前对话，重新加载对话内容
-        if (appState.currentConversation) {
-            await loadConversation(appState.currentConversation, selectedKbId);
-        } else {
-            // 如果没有当前对话，清空聊天区域并显示欢迎消息
-            elements.chatMessages.innerHTML = '';
-            elements.chatMessages.innerHTML = tipsText; 
-        }
+
+        elements.chatMessages.innerHTML = '';
+        elements.chatMessages.innerHTML = tipsText;
     });
 
 });
@@ -92,6 +71,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 const userInfo = document.getElementById('userInfo');
 const dropdownContent = document.getElementById('dropdownContent');
 let currentRequestController = null;
+let historyMenuListenerBound = false;
 
 userInfo.addEventListener('click', function(event) {
     event.stopPropagation();
@@ -107,9 +87,25 @@ dropdownContent.addEventListener('click', function(event) {
     event.stopPropagation();
 });
 
-function logout() {
-    if (confirm('确定要退出登录吗？')) {
-        window.location.href = "/logout";
+async function logout() {
+    if (!confirm('确定要退出登录吗？')) {
+        return;
+    }
+
+    try {
+        const response = await fetch('/logout', {
+            method: 'POST',
+            credentials: 'include'
+        });
+
+        if (!response.ok && !response.redirected) {
+            throw new Error('退出登录失败');
+        }
+
+        window.location.href = '/login?logout=true';
+    } catch (error) {
+        console.error('退出登录失败:', error);
+        alert('退出登录失败，请稍后再试');
     }
 }
 
@@ -156,45 +152,27 @@ async function loadKnowledgeBases() {
         if (!response.ok) {
             throw new Error(`HTTP error! status: ${response.status}`);
         }
-        
+
         const knowledgeBases = await response.json();
         const selectElement = document.getElementById('knowledgeBaseSelect');
-        
+        const currentValue = selectElement.value;
+
         // 清空现有选项（保留默认选项）
         while (selectElement.options.length > 1) {
             selectElement.remove(1);
         }
-        
-        if (knowledgeBases.length === 0) {
-            // 没有知识库的情况
-            console.log('没有可用的知识库');
-            
-            // 添加一个不可选的提示选项
-            const emptyOption = document.createElement('option');
-            emptyOption.value = "";
-            emptyOption.textContent = "暂无知识库，请先创建";
-            emptyOption.disabled = true;
-            emptyOption.selected = true;
-            selectElement.appendChild(emptyOption);
-            
-            // 清空应用状态中的知识库ID
-            appState.currentKnowledgeBaseId = null;
-            
-            // 隐藏知识库统计信息
-            const kbInfo = document.getElementById('kbInfo');
-            if (kbInfo) kbInfo.style.display = 'none';
-            
-            return;
-        }
 
-        // 添加知识库选项
         knowledgeBases.forEach(kb => {
             const option = document.createElement('option');
             option.value = kb.id;
             option.textContent = "> 知识库：" + kb.name;
             selectElement.appendChild(option);
         });
-        
+
+        const hasCurrentKnowledgeBase = knowledgeBases.some(kb => kb.id === currentValue);
+        selectElement.value = hasCurrentKnowledgeBase ? currentValue : '';
+        appState.currentKnowledgeBaseId = selectElement.value || null;
+
     } catch (error) {
         console.error('加载知识库失败:', error);
         // 可以选择显示一个错误提示，但不影响主要功能
@@ -207,21 +185,23 @@ function renderHistory(historyData) {
     elements.historyContainer.innerHTML = '';
     
     if (!historyData || !historyData.groups || historyData.groups.length === 0) {
-        elements.historyContainer.innerHTML = `
-            <div class="empty-state">
-                <p>暂无历史对话记录</p>
-            </div>
-        `;
+        const emptyState = document.createElement('div');
+        emptyState.className = 'empty-state';
+        const text = document.createElement('p');
+        text.textContent = '暂无历史对话记录';
+        emptyState.appendChild(text);
+        elements.historyContainer.appendChild(emptyState);
         return;
     }
     
     historyData.groups.forEach(group => {
         const groupElement = document.createElement('div');
         groupElement.className = 'history-section';
-        
-        groupElement.innerHTML = `
-            <div class="section-title">${group.time_group}</div>
-        `;
+
+        const sectionTitle = document.createElement('div');
+        sectionTitle.className = 'section-title';
+        sectionTitle.textContent = group.time_group;
+        groupElement.appendChild(sectionTitle);
         
         group.conversations.forEach(conversation => {
             const item = document.createElement('div');
@@ -230,16 +210,36 @@ function renderHistory(historyData) {
                 item.classList.add('active');
             }
             item.dataset.id = conversation.id;
-            item.innerHTML = `
-                <div class="conversation-title">${conversation.title}</div>
-                <div class="conversation-actions">
-                    <button class="more-btn">···</button>
-                    <div class="dropdown-menu">
-                        <button class="dropdown-item rename-btn" data-id="${conversation.id}">重命名</button>
-                        <button class="dropdown-item delete-btn" data-id="${conversation.id}">删除</button>
-                    </div>
-                </div>
-            `;
+            const titleElement = document.createElement('div');
+            titleElement.className = 'conversation-title';
+            titleElement.textContent = conversation.title;
+
+            const actionsElement = document.createElement('div');
+            actionsElement.className = 'conversation-actions';
+
+            const moreBtnElement = document.createElement('button');
+            moreBtnElement.className = 'more-btn';
+            moreBtnElement.textContent = '···';
+
+            const dropdownMenuElement = document.createElement('div');
+            dropdownMenuElement.className = 'dropdown-menu';
+
+            const renameButton = document.createElement('button');
+            renameButton.className = 'dropdown-item rename-btn';
+            renameButton.dataset.id = conversation.id;
+            renameButton.textContent = '重命名';
+
+            const deleteButton = document.createElement('button');
+            deleteButton.className = 'dropdown-item delete-btn';
+            deleteButton.dataset.id = conversation.id;
+            deleteButton.textContent = '删除';
+
+            dropdownMenuElement.appendChild(renameButton);
+            dropdownMenuElement.appendChild(deleteButton);
+            actionsElement.appendChild(moreBtnElement);
+            actionsElement.appendChild(dropdownMenuElement);
+            item.appendChild(titleElement);
+            item.appendChild(actionsElement);
         // 点击加载对话
         item.addEventListener('click', (e) => {
 
@@ -256,8 +256,8 @@ function renderHistory(historyData) {
         });
 
             // 更多按钮点击事件
-            const moreBtn = item.querySelector('.more-btn');
-            const dropdownMenu = item.querySelector('.dropdown-menu');
+            const moreBtn = moreBtnElement;
+            const dropdownMenu = dropdownMenuElement;
             
             moreBtn.addEventListener('click', (e) => {
                 e.stopPropagation(); // 阻止冒泡
@@ -272,7 +272,7 @@ function renderHistory(historyData) {
             });
 
             // 重命名按钮事件
-            const renameBtn = item.querySelector('.rename-btn');
+            const renameBtn = renameButton;
             renameBtn.addEventListener('click', async (e) => {
                 e.stopPropagation();
                 dropdownMenu.classList.remove('show');
@@ -308,7 +308,7 @@ function renderHistory(historyData) {
             });
             
             // 删除按钮事件
-            const deleteBtn = item.querySelector('.delete-btn');
+            const deleteBtn = deleteButton;
             deleteBtn.addEventListener('click', async (e) => {
                 e.stopPropagation();
                 dropdownMenu.classList.remove('show');
@@ -347,13 +347,16 @@ function renderHistory(historyData) {
         elements.historyContainer.appendChild(groupElement);
     });
 
-    document.addEventListener('click', (e) => {
-        if (!e.target.closest('.dropdown-menu') && !e.target.closest('.more-btn')) {
-            document.querySelectorAll('.dropdown-menu').forEach(menu => {
-                menu.classList.remove('show');
-            });
-        }
-    });
+    if (!historyMenuListenerBound) {
+        document.addEventListener('click', (e) => {
+            if (!e.target.closest('.dropdown-menu') && !e.target.closest('.more-btn')) {
+                document.querySelectorAll('.dropdown-menu').forEach(menu => {
+                    menu.classList.remove('show');
+                });
+            }
+        });
+        historyMenuListenerBound = true;
+    }
 
 }
 
@@ -414,32 +417,41 @@ function renderConversation(conversation) {
 function addMessageToChat(message, isRealtime = false) {
     const messageContainer = document.createElement('div');
     messageContainer.className = 'message-container';
-    
+
     const isUser = message.role === 'user';
+    const wrapper = document.createElement('div');
+    wrapper.className = `message ${isUser ? 'user-message' : 'ai-message'}`;
 
-    // 安全渲染Markdown内容
-    const renderMarkdown = (content) => {
-        // 使用DOMPurify进行安全过滤
-        const clean = DOMPurify.sanitize(marked.parse(content));
-        return clean;
-    };
+    const header = document.createElement('div');
+    header.className = 'message-header';
 
-    
-    const content = isUser ? message.content : renderMarkdown(message.content);
+    const avatar = document.createElement('div');
+    avatar.className = `avatar ${isUser ? 'user-avatar-small' : 'ai-avatar'}`;
+    avatar.setAttribute('aria-label', isUser ? '用户头像' : 'AI头像');
+    avatar.textContent = isUser ? 'U' : 'AI';
 
-    messageContainer.innerHTML = `
-        <div class="message ${isUser ? 'user-message' : 'ai-message'}">
-            <div class="message-header">
-                <div class="avatar ${isUser ? 'user-avatar-small' : 'ai-avatar'}" aria-label="${isUser ? '用户头像' : 'AI头像'}">
-                    ${isUser ? 'U' : 'AI'}
-                </div>
-                <div class="sender-name">${isUser ? '你' : '智能助手'}</div>
-            </div>
-            <div class="message-content">${content}</div>
-            <div class="message-actions"></div>
-        </div>
-    `;
-    
+    const senderName = document.createElement('div');
+    senderName.className = 'sender-name';
+    senderName.textContent = isUser ? '你' : '智能助手';
+
+    const contentElement = document.createElement('div');
+    contentElement.className = 'message-content';
+    if (isUser) {
+        contentElement.textContent = message.content;
+    } else {
+        contentElement.innerHTML = DOMPurify.sanitize(marked.parse(message.content));
+    }
+
+    const actions = document.createElement('div');
+    actions.className = 'message-actions';
+
+    header.appendChild(avatar);
+    header.appendChild(senderName);
+    wrapper.appendChild(header);
+    wrapper.appendChild(contentElement);
+    wrapper.appendChild(actions);
+    messageContainer.appendChild(wrapper);
+
     elements.chatMessages.appendChild(messageContainer);
     
     // 如果是AI消息且是测试用例场景，添加导出按钮
@@ -682,22 +694,32 @@ async function sendMessage() {
         // 创建AI消息容器（用于流式内容）
         const aiMessageContainer = document.createElement('div');
         aiMessageContainer.className = 'message-container';
-        
-        aiMessageContainer.innerHTML = `
-            <div class="message ai-message">
-                <div class="message-header">
-                    <div class="avatar ai-avatar" aria-label="AI头像">O</div>
-                    <div class="sender-name">智能助手</div>
-                </div>
-                <div class="message-content"></div>
-                <div class="message-actions"></div>
-            </div>
-        `;
-        
+
+        const aiWrapper = document.createElement('div');
+        aiWrapper.className = 'message ai-message';
+        const aiHeader = document.createElement('div');
+        aiHeader.className = 'message-header';
+        const aiAvatar = document.createElement('div');
+        aiAvatar.className = 'avatar ai-avatar';
+        aiAvatar.setAttribute('aria-label', 'AI头像');
+        aiAvatar.textContent = 'O';
+        const aiSender = document.createElement('div');
+        aiSender.className = 'sender-name';
+        aiSender.textContent = '智能助手';
+        const contentElement = document.createElement('div');
+        contentElement.className = 'message-content';
+        const actionsElement = document.createElement('div');
+        actionsElement.className = 'message-actions';
+
+        aiHeader.appendChild(aiAvatar);
+        aiHeader.appendChild(aiSender);
+        aiWrapper.appendChild(aiHeader);
+        aiWrapper.appendChild(contentElement);
+        aiWrapper.appendChild(actionsElement);
+        aiMessageContainer.appendChild(aiWrapper);
+
         elements.chatMessages.appendChild(aiMessageContainer);
         scrollToBottom();
-        
-        const contentElement = aiMessageContainer.querySelector('.message-content');
         
         // 移除正在输入指示器
         aiTypingElement.remove();
@@ -840,58 +862,44 @@ async function sendMessage() {
 function createTypingIndicator() {
     const container = document.createElement('div');
     container.className = 'message-container';
-    
-    container.innerHTML = `
-        <div class="message ai-message">
-            <div class="message-header">
-                <div class="avatar ai-avatar" aria-label="AI头像">O</div>
-                <div class="sender-name">智能助手</div>
-            </div>
-            <div class="message-content">
-                <div class="typing-indicator">
-                    <div class="typing-dot"></div>
-                    <div class="typing-dot"></div>
-                    <div class="typing-dot"></div>
-                </div>
-            </div>
-        </div>
-    `;
-    
+
+    const wrapper = document.createElement('div');
+    wrapper.className = 'message ai-message';
+    const header = document.createElement('div');
+    header.className = 'message-header';
+    const avatar = document.createElement('div');
+    avatar.className = 'avatar ai-avatar';
+    avatar.setAttribute('aria-label', 'AI头像');
+    avatar.textContent = 'O';
+    const sender = document.createElement('div');
+    sender.className = 'sender-name';
+    sender.textContent = '智能助手';
+    const content = document.createElement('div');
+    content.className = 'message-content';
+    const typingIndicator = document.createElement('div');
+    typingIndicator.className = 'typing-indicator';
+
+    for (let i = 0; i < 3; i++) {
+        const dot = document.createElement('div');
+        dot.className = 'typing-dot';
+        typingIndicator.appendChild(dot);
+    }
+
+    header.appendChild(avatar);
+    header.appendChild(sender);
+    content.appendChild(typingIndicator);
+    wrapper.appendChild(header);
+    wrapper.appendChild(content);
+    container.appendChild(wrapper);
+
     return container;
 }
 // 添加打字机效果
 function typeWriterEffect(messageElement, text, callback) {
-    let i = 0;
-    const speed = 20; // 打字速度（毫秒/字符）
-    
-    function type() {
-                if (i < text.length) {
-            // 获取下一个字符
-            const char = text.charAt(i);
-            
-            if (isMarkdown) {
-
-                const partialText = text.substring(0, i + 1);
-
-                messageElement.innerHTML = DOMPurify.sanitize(marked.parse(partialText));
-
-            } else {
-
-                messageElement.textContent += char;
-                // 添加光标
-                // messageElement.appendChild(cursor);
-            }
-            
-            i++;
-            setTimeout(type, speed);
-        } else {
-
-            cursor.remove();
-            if (callback) callback();
-        }
+    messageElement.innerHTML = DOMPurify.sanitize(marked.parse(text));
+    if (callback) {
+        callback();
     }
-    
-    type();
 }
 
 // 添加导出按钮的函数
@@ -990,5 +998,5 @@ function convertTableToCSV(tableData) {
 }
 
 function about() {
-    alert("© 2025 快乐生活，有问题请联系 lzfdd937@163.com ~");
+    alert("AI 智能测试平台");
 }

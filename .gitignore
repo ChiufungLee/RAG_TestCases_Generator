@@ -10,3 +10,6 @@ fastapi_venv/*
 chroma_db/*
 temp_uploads/*
 uploads/*
+config.py
+pytest.ini
+tests/
