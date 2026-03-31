@@ -74,7 +74,39 @@
                 </button>
             </div>
 
-                        <!-- 文件列表区域 -->
+            <!-- 文件上传区域 -->
+            <div class="upload-section">
+                <h2 class="section-title">
+                    <i class="fas fa-cloud-upload-alt"></i> 上传文档
+                </h2>
+                
+                <!-- 文件上传区域 -->
+                <div class="upload-area" id="uploadArea">
+                    <i class="fas fa-cloud-upload-alt"></i>
+                    <h3>拖放文件到此处或点击选择文件</h3>
+                    <p>支持 PDF 格式，单个文件大小不超过 50MB</p>
+                    <button class="upload-btn" id="selectFileBtn">
+                        <i class="fas fa-folder-open"></i> 选择文件
+                    </button>
+                    <input type="file" class="file-input" id="fileInput" accept=".pdf" multiple>
+                </div>
+                
+                <!-- 上传进度显示 -->
+                <div class="upload-progress" id="uploadProgress">
+                    <div class="progress-header">
+                        <span class="progress-filename" id="progressFilename">文件名.pdf</span>
+                        <span class="progress-percent" id="progressPercent">0%</span>
+                    </div>
+                    <div class="progress-bar">
+                        <div class="progress-fill" id="progressFill"></div>
+                    </div>
+                    <div class="upload-status processing" id="uploadStatus">
+                        <i class="fas fa-spinner fa-spin"></i> <span>正在上传...</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 文件列表区域 -->
             <div class="files-section">
                 <div class="files-header">
                     <h2 class="section-title">
@@ -117,37 +149,7 @@
                 </div>
             </div>
 
-            <!-- 文件上传区域 -->
-            <div class="upload-section">
-                <h2 class="section-title">
-                    <i class="fas fa-cloud-upload-alt"></i> 上传文档
-                </h2>
-                
-                <!-- 文件上传区域 -->
-                <div class="upload-area" id="uploadArea">
-                    <i class="fas fa-cloud-upload-alt"></i>
-                    <h3>拖放文件到此处或点击选择文件</h3>
-                    <p>支持 PDF 格式，单个文件大小不超过 50MB</p>
-                    <button class="upload-btn" id="selectFileBtn">
-                        <i class="fas fa-folder-open"></i> 选择文件
-                    </button>
-                    <input type="file" class="file-input" id="fileInput" accept=".pdf" multiple>
-                </div>
-                
-                <!-- 上传进度显示 -->
-                <div class="upload-progress" id="uploadProgress">
-                    <div class="progress-header">
-                        <span class="progress-filename" id="progressFilename">文件名.pdf</span>
-                        <span class="progress-percent" id="progressPercent">0%</span>
-                    </div>
-                    <div class="progress-bar">
-                        <div class="progress-fill" id="progressFill"></div>
-                    </div>
-                    <div class="upload-status processing" id="uploadStatus">
-                        <i class="fas fa-spinner fa-spin"></i> <span>正在上传...</span>
-                    </div>
-                </div>
-            </div>
+
             
 
             <footer class="footer-note">

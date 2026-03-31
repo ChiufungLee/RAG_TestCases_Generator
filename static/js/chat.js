@@ -72,6 +72,7 @@ const userInfo = document.getElementById('userInfo');
 const dropdownContent = document.getElementById('dropdownContent');
 let currentRequestController = null;
 let historyMenuListenerBound = false;
+let latestHistoryRequestId = 0;
 
 userInfo.addEventListener('click', function(event) {
     event.stopPropagation();
@@ -119,6 +120,7 @@ window.addEventListener('beforeunload', () => {
 
 // 加载历史记录
 async function loadHistory(scenario, knowledgeBaseId = null) {
+    const requestId = ++latestHistoryRequestId;
     elements.historyContainer.innerHTML = '<div class="loader">加载历史记录中...</div>';
     try {
         // 构建查询参数
@@ -127,23 +129,33 @@ async function loadHistory(scenario, knowledgeBaseId = null) {
         if (knowledgeBaseId) {
             params.append('knowledge_base_id', knowledgeBaseId);
         }
-        
+
         const response = await fetch(`/api/history?${params.toString()}`, {
             method: 'GET',
             credentials: 'include'
         });
-        
+
+        if (requestId !== latestHistoryRequestId) {
+            return;
+        }
+
         if (response.ok) {
             const historyData = await response.json();
+            if (requestId !== latestHistoryRequestId) {
+                return;
+            }
             renderHistory(historyData);
         } else {
             console.error('加载历史记录失败');
             elements.historyContainer.innerHTML = '<div class="empty-state">无法加载历史记录</div>';
         }
     } catch (error) {
+        if (requestId !== latestHistoryRequestId) {
+            return;
+        }
         console.error('加载历史记录时出错:', error);
         elements.historyContainer.innerHTML = '<div class="empty-state">加载历史记录时出错</div>';
-    }    
+    }
 }
 
 async function loadKnowledgeBases() {
@@ -177,6 +189,13 @@ async function loadKnowledgeBases() {
         console.error('加载知识库失败:', error);
         // 可以选择显示一个错误提示，但不影响主要功能
     }
+}
+
+async function refreshHistoryAndHighlightCurrentConversation() {
+    await loadHistory(appState.currentScenario, appState.currentKnowledgeBaseId);
+    document.querySelectorAll('.conversation-item').forEach(item => {
+        item.classList.toggle('active', item.dataset.id === appState.currentConversation);
+    });
 }
 
 // 渲染历史记录
@@ -213,6 +232,7 @@ function renderHistory(historyData) {
             const titleElement = document.createElement('div');
             titleElement.className = 'conversation-title';
             titleElement.textContent = conversation.title;
+            titleElement.title = conversation.title;
 
             const actionsElement = document.createElement('div');
             actionsElement.className = 'conversation-actions';
@@ -292,8 +312,10 @@ function renderHistory(historyData) {
                         });
                         
                         if (response.ok) {
-                            item.querySelector('.conversation-title').textContent = newTitle.trim();
-                            
+                            const conversationTitleElement = item.querySelector('.conversation-title');
+                            conversationTitleElement.textContent = newTitle.trim();
+                            conversationTitleElement.title = newTitle.trim();
+
                             // if (appState.currentConversation === conversationId) {
                             //     elements.chatTitle.textContent = newTitle.trim();
                             // }
@@ -555,21 +577,10 @@ function setupEventListeners() {
             if (response.ok) {
                 const data = await response.json();
                 appState.currentConversation = data.conversation_id;
-                
-            elements.chatMessages.innerHTML = tipsText  
-                
-                // 刷新历史记录
-                await loadHistory(appState.currentScenario, appState.currentKnowledgeBaseId);
-                
-                // 高亮显示当前新建的对话
-                setTimeout(() => {
-                    document.querySelectorAll('.conversation-item').forEach(el => {
-                        el.classList.remove('active');
-                        if (el.dataset.id === appState.currentConversation) {
-                            el.classList.add('active');
-                        }
-                    });
-                }, 300); // 等待历史记录加载完成
+
+            elements.chatMessages.innerHTML = tipsText
+
+                await refreshHistoryAndHighlightCurrentConversation();
             } else {
                 throw new Error('创建新对话失败');
             }
@@ -652,6 +663,8 @@ async function sendMessage() {
     
     try {
 
+        let createdConversation = false;
+
         // 如果当前没有对话，先创建一个新对话
         if (!appState.currentConversation) {
             try {
@@ -660,16 +673,18 @@ async function sendMessage() {
                 if (appState.currentKnowledgeBaseId) {
                     formData.append('knowledge_base_id', appState.currentKnowledgeBaseId);
                 }
-                
+
                 const createResponse = await fetch('/api/conversation/new', {
                     method: 'POST',
                     credentials: 'include',
                     body: formData
                 });
-                
+
                 if (createResponse.ok) {
                     const data = await createResponse.json();
                     appState.currentConversation = data.conversation_id;
+                    createdConversation = true;
+                    await refreshHistoryAndHighlightCurrentConversation();
                 } else {
                     throw new Error('创建对话失败');
                 }
@@ -761,7 +776,6 @@ async function sendMessage() {
         const reader = response.body.getReader();
         const decoder = new TextDecoder('utf-8');
         let aiResponse = "";
-        let newConversationId = null;
         let conversationTitle = null;
         
         while (true) {
@@ -806,13 +820,9 @@ async function sendMessage() {
                             }
                         }
 
-                        if (data.new_conversation_id) {
-                            newConversationId = data.new_conversation_id;
-                        }
-                        
                         if (data.conversation_title) {
                             conversationTitle = data.conversation_title;
-                        }      
+                        }
                         
                     } catch (e) {
                         console.error('解析JSON失败:', e);
@@ -828,13 +838,8 @@ async function sendMessage() {
             addExportButton(aiMessageContainer);
         }
 
-        if (newConversationId) {
-            appState.currentConversation = newConversationId;
-            // elements.chatTitle.textContent = conversationTitle || "新对话";
-            
-            // 刷新历史记录
-            // await loadHistory(appState.currentScenario);
-            await loadHistory(appState.currentScenario, appState.currentKnowledgeBaseId);
+        if (createdConversation || conversationTitle) {
+            await refreshHistoryAndHighlightCurrentConversation();
         }
         
     } catch (error) {

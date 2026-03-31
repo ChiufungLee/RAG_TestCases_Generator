@@ -22,11 +22,8 @@ ALLOWED_UPLOAD_EXTENSIONS = {".pdf"}
 
 
 def _refresh_kb_file_count(db, kb_id: str) -> int:
-    new_count = (
-        db.query(KnowledgeFile)
-        .filter(KnowledgeFile.knowledge_base_id == kb_id, KnowledgeFile.status == "completed")
-        .count()
-    )
+    db.flush()
+    new_count = db.query(KnowledgeFile).filter(KnowledgeFile.knowledge_base_id == kb_id).count()
     kb = db.query(KnowledgeBase).filter(KnowledgeBase.id == kb_id).first()
     if kb:
         kb.file_count = new_count
@@ -145,6 +142,8 @@ async def upload_document(kb_id, file, background_tasks, db, user_id: int):
         )
 
         db.add(file_record)
+        db.commit()
+        _refresh_kb_file_count(db, kb_id)
         db.commit()
         db.refresh(file_record)
 
@@ -302,10 +301,10 @@ def process_document_async(file_id: str, kb_id: str):
             file_record.status = "completed"
             file_record.chunk_count = chunk_count
             file_record.processed_at = datetime.now()
-            completed_count = _refresh_kb_file_count(db, kb_id)
+            total_file_count = _refresh_kb_file_count(db, kb_id)
             db.commit()
             logger.info("文档处理完成: %s, 分片数: %s", file_record.filename, chunk_count)
-            logger.info("知识库 %s 已完成文件数: %s", kb_id, completed_count)
+            logger.info("知识库 %s 当前文件总数: %s", kb_id, total_file_count)
 
         except Exception as e:
             db.rollback()

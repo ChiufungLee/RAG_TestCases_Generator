@@ -36,6 +36,7 @@ const createdDate = document.getElementById('createdDate');
 // 存储知识库信息和文件列表
 let knowledgeBase = null;
 let files = [];
+let refreshTimerId = null;
 
 // 消息提示函数
 function showMessage(message, type = 'info') {
@@ -101,6 +102,28 @@ async function loadKnowledgeBaseDetail() {
     }
 }
 
+function hasPendingFiles() {
+    return Boolean(
+        knowledgeBase && knowledgeBase.files && knowledgeBase.files.some(file => file.status === 'pending' || file.status === 'processing')
+    );
+}
+
+function scheduleKnowledgeBaseRefresh() {
+    if (refreshTimerId !== null) {
+        clearTimeout(refreshTimerId);
+    }
+
+    if (!hasPendingFiles()) {
+        refreshTimerId = null;
+        return;
+    }
+
+    refreshTimerId = window.setTimeout(async () => {
+        refreshTimerId = null;
+        await loadKnowledgeBaseDetail();
+    }, 2000);
+}
+
 // 渲染知识库详情
 function renderKnowledgeBaseDetail() {
     if (!knowledgeBase) return;
@@ -142,6 +165,8 @@ function renderKnowledgeBaseDetail() {
     } else {
         showEmptyFilesState();
     }
+
+    scheduleKnowledgeBaseRefresh();
 }
 // 显示空文件状态
 function showEmptyFilesState() {
@@ -315,25 +340,14 @@ async function uploadFile(file) {
         // 上传完成事件
         xhr.addEventListener('load', async () => {
             if (xhr.status === 200) {
-                const result = JSON.parse(xhr.responseText);
-
                 uploadStatus.className = 'upload-status completed';
                 uploadStatus.innerHTML = '<i class="fas fa-check-circle"></i> <span>上传成功，正在后台处理...</span>';
 
                 showMessage(`文件"${file.name}"上传成功，正在后台处理`, 'success');
+                await loadKnowledgeBaseDetail();
 
-                // 上传成功后，等待2秒后刷新文件列表
                 setTimeout(() => {
-                    // 这里可以重新加载文件列表
-                    // 由于后端可能还没有处理完文件，我们可以先更新文件计数
-                    const currentCount = parseInt(fileCount.textContent);
-                    fileCount.textContent = currentCount + 1;
-
-                    // 隐藏进度条
-                    setTimeout(() => {
-                        uploadProgress.style.display = 'none';
-                    }, 2000);
-
+                    uploadProgress.style.display = 'none';
                 }, 2000);
             } else {
                 uploadStatus.className = 'upload-status failed';
@@ -402,21 +416,8 @@ async function deleteFile(fileId) {
         }
         
         showMessage('文件删除成功', 'success');
-        
-        // 重新加载文件列表
-        // loadFilesList();
-        // 从当前文件列表中移除该文件行
-        const row = document.querySelector(`tr.file-row[data-file-id="${fileId}"]`);
-        if (row) {
-            row.remove();
-        }
-        
-        // 更新文件计数
-        const currentCount = parseInt(fileCount.textContent);
-        if (currentCount > 0) {
-            fileCount.textContent = currentCount - 1;
-        }
-        
+        await loadKnowledgeBaseDetail();
+
     } catch (error) {
         console.error('删除文件失败:', error);
         showMessage(`删除文件失败: ${error.message}`, 'error');

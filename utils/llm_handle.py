@@ -82,9 +82,14 @@ async def generate_response(request, prompt, conversation_id, is_new_conversatio
         if completed and ai_response and not full_response_saved:
             await save_ai_response(ai_response, conversation_id, db)
             full_response_saved = True
-            yield "data: [DONE]\n\n"
+
         if completed and is_new_conversation:
-            await generate_and_update_title(message, conversation_id, db)
+            conversation_title = await generate_and_update_title(message, conversation_id, db)
+            if conversation_title:
+                yield f"data: {json.dumps({'conversation_title': conversation_title})}\n\n"
+
+        if completed:
+            yield "data: [DONE]\n\n"
 
 
 async def save_ai_response(content, conversation_id, db: Session):
@@ -120,7 +125,7 @@ async def generate_and_update_title(user_message: str, conversation_id: str, db:
     conversation = db.query(Conversation).filter(Conversation.id == conversation_id).first()
     if not conversation:
         logger.warning("未找到对话，无法生成标题: %s", conversation_id)
-        return
+        return None
 
     fallback_title = (user_message[:20] + "...") if len(user_message) > 20 else user_message
 
@@ -142,8 +147,10 @@ async def generate_and_update_title(user_message: str, conversation_id: str, db:
         db.add(conversation)
         db.commit()
         db.refresh(conversation)
+        return title
     except Exception as e:
         logger.error("生成标题失败: %s", e, exc_info=True)
         conversation.title = fallback_title
         db.add(conversation)
         db.commit()
+        return fallback_title

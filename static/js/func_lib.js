@@ -574,7 +574,6 @@ function showEditModal(knowledgeBase) {
     // 事件监听器
     const closeEditModalBtn = document.getElementById('closeEditModalBtn');
     const cancelEditBtn = document.getElementById('cancelEditBtn');
-    const editForm = document.getElementById('editForm');
     
     // 关闭编辑模态框
     function closeEditModal() {
@@ -758,8 +757,19 @@ function initEventListeners() {
 }
 
 
+function updateFunctionMenu(activeLabel) {
+    document.querySelectorAll('.function-menu > div').forEach((item) => {
+        item.classList.toggle('active', item.textContent.trim() === activeLabel);
+    });
+}
+
+function showKnowledgeManagement() {
+    window.location.href = '/knowledge';
+}
+
 function showAboutModal() {
     mainContent.innerHTML = '';
+    updateFunctionMenu('关于此项目');
 
     const aboutContent = document.createElement('div');
     aboutContent.className = 'about-content';
