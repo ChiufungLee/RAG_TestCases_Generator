@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, Form, Request, status
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 
@@ -24,10 +24,8 @@ async def register_user(
 ):
     register_result = await AuthService.create_user(db, username, password)
     if not register_result["success"]:
-        return templates.TemplateResponse(
-            request,
-            "register.html",
-            {"request": request, "error": register_result["error"]},
+        return JSONResponse(
+            {"detail": register_result["error"]},
             status_code=status.HTTP_400_BAD_REQUEST,
         )
 
@@ -61,10 +59,8 @@ async def login_user(
 ):
     auth_result = await AuthService.login_user(db, username, password)
     if not auth_result["success"]:
-        return templates.TemplateResponse(
-            request,
-            "login.html",
-            {"request": request, "error": "用户名或密码错误"},
+        return JSONResponse(
+            {"detail": "用户名或密码错误"},
             status_code=status.HTTP_401_UNAUTHORIZED,
         )
 
