@@ -43,12 +43,16 @@ async def call_llm_model(prompt: str) -> AsyncGenerator[str, None]:
     full_response = ""
 
     try:
-        async with asyncio.timeout(180):
-            async for token in model.astream(prompt):
-                yield token.content
-                full_response += token.content
+        aiter = model.astream(prompt).__aiter__()
+        while True:
+            try:
+                token = await asyncio.wait_for(aiter.__anext__(), timeout=180)
+            except StopAsyncIteration:
+                break
+            yield token.content
+            full_response += token.content
 
-    except asyncio.TimeoutError:
+    except (asyncio.TimeoutError, asyncio.CancelledError):
         yield "[错误：生成响应超时]"
         logger.warning("LLM生成超时，prompt长度: %s", len(prompt))
     except Exception as e:
