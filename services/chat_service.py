@@ -17,6 +17,8 @@ class ChatService:
         filter_condition = [Conversation.user_id == user_id, Conversation.scenario == scenario]
         if knowledge_base_id:
             filter_condition.append(Conversation.knowledge_base_id == knowledge_base_id)
+        else:
+            filter_condition.append(Conversation.knowledge_base_id.is_(None))
         conversations = db.query(Conversation).filter(*filter_condition).order_by(desc(Conversation.updated_at)).all()
 
         groups = []
