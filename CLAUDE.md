@@ -6,6 +6,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 AI-powered testing assistant platform (AI 智能测试系统) built with FastAPI + LangChain + RAG. Supports uploading PDF knowledge bases, vector retrieval via ChromaDB, and LLM-driven requirement analysis, test case generation, and product troubleshooting.
 
+## Virtual Environment
+
+The project uses a virtual environment located at `fastapi_venv/` in the project root. Always use the venv Python and pip:
+```bash
+fastapi_venv/Scripts/python.exe   # Python interpreter
+fastapi_venv/Scripts/pip.exe      # pip
+```
+
 ## Commands
 
 ### Run the app
@@ -15,15 +23,15 @@ uvicorn main:app --host 0.0.0.0 --port 8000 --reload
 
 ### Install dependencies
 ```bash
-pip install -r requirements.txt
+fastapi_venv/Scripts/pip.exe install -r requirements.txt
 ```
 
 ### Run tests
 ```bash
-pytest                                          # all tests
-pytest tests/test_auth.py                       # single file
-pytest tests/test_auth.py::test_register_hashes_password  # single test
-pytest tests/test_chat_authorization.py -k "test_user_cannot_read"  # by name
+fastapi_venv/Scripts/pytest.exe tests/                                       # all tests
+fastapi_venv/Scripts/pytest.exe tests/test_auth.py                          # single file
+fastapi_venv/Scripts/pytest.exe tests/test_auth.py::test_register_hashes_password  # single test
+fastapi_venv/Scripts/pytest.exe tests/test_chat_authorization.py -k "test_user_cannot_read"  # by name
 ```
 
 No linting configuration exists in this project.

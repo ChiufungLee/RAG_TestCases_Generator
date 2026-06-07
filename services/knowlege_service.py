@@ -12,6 +12,7 @@ from fastapi import HTTPException
 from models.chat import Conversation
 from models.database import create_session
 from models.knowledge_models import KnowledgeBase, KnowledgeFile
+from sqlalchemy import or_
 from utils.file_handle import get_document_processor, get_upload_dir
 from utils.retriever import ChromaRetriever
 
@@ -54,12 +55,14 @@ def resolve_upload_path(file_path: str) -> Path:
 
 
 async def create_knowledge_record(db, record_data, owner_user_id: int):
+    visibility = getattr(record_data, 'visibility', 'private')
     collection_name = f"kb_{uuid.uuid4().hex[:16]}"
     kb = KnowledgeBase(
         name=record_data.name,
         description=record_data.description,
         collection_name=collection_name,
         owner_user_id=owner_user_id,
+        visibility=visibility,
     )
     db.add(kb)
     db.commit()
@@ -72,16 +75,25 @@ async def create_knowledge_record(db, record_data, owner_user_id: int):
 
 
 async def get_all_knowledge(db, user_id: int):
-    return db.query(KnowledgeBase).filter(KnowledgeBase.owner_user_id == user_id).all()
+    return (
+        db.query(KnowledgeBase)
+        .filter(or_(KnowledgeBase.owner_user_id == user_id, KnowledgeBase.visibility == "shared"))
+        .all()
+    )
 
 
-async def get_knowledge_base_by_id(kb_id, db, user_id: int | None = None):
+async def get_knowledge_base_by_id(kb_id, db, user_id: int | None = None, allow_shared_read: bool = False):
     if not kb_id:
         return None
 
     query = db.query(KnowledgeBase).filter(KnowledgeBase.id == kb_id)
     if user_id is not None:
-        query = query.filter(KnowledgeBase.owner_user_id == user_id)
+        if allow_shared_read:
+            query = query.filter(
+                or_(KnowledgeBase.owner_user_id == user_id, KnowledgeBase.visibility == "shared")
+            )
+        else:
+            query = query.filter(KnowledgeBase.owner_user_id == user_id)
     return query.first()
 
 
@@ -94,6 +106,8 @@ async def update_knowledge_base(db, kb_id, kb_data, user_id: int):
         kb.name = kb_data.name
     if kb_data.description is not None:
         kb.description = kb_data.description
+    if kb_data.visibility is not None:
+        kb.visibility = kb_data.visibility
 
     kb.updated_at = datetime.now()
     db.commit()
@@ -216,17 +230,23 @@ async def delete_knowledge_base(db, kb_id, user_id: int):
         raise HTTPException(status_code=500, detail="删除知识库失败")
 
 
-async def get_knowledge_file(db, file_id: str, user_id: int):
-    return (
+async def get_knowledge_file(db, file_id: str, user_id: int, allow_shared_read: bool = False):
+    query = (
         db.query(KnowledgeFile)
         .join(KnowledgeBase, KnowledgeFile.knowledge_base_id == KnowledgeBase.id)
-        .filter(KnowledgeFile.id == file_id, KnowledgeBase.owner_user_id == user_id)
-        .first()
+        .filter(KnowledgeFile.id == file_id)
     )
+    if allow_shared_read:
+        query = query.filter(
+            or_(KnowledgeBase.owner_user_id == user_id, KnowledgeBase.visibility == "shared")
+        )
+    else:
+        query = query.filter(KnowledgeBase.owner_user_id == user_id)
+    return query.first()
 
 
-async def get_knowledge_files_by_kb(db, kb_id: str, user_id: int):
-    kb = await get_knowledge_base_by_id(kb_id=kb_id, db=db, user_id=user_id)
+async def get_knowledge_files_by_kb(db, kb_id: str, user_id: int, allow_shared_read: bool = False):
+    kb = await get_knowledge_base_by_id(kb_id=kb_id, db=db, user_id=user_id, allow_shared_read=allow_shared_read)
     if not kb:
         return None, None
 

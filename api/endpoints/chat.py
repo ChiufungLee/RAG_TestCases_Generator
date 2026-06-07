@@ -3,11 +3,12 @@ import logging
 from fastapi import APIRouter, Depends, Form, Request, Response
 from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 from fastapi.templating import Jinja2Templates
+from langchain_core.messages import BaseMessage
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from models.database import get_db
-from prompts.prompts import get_prompt
+from prompts.prompts import get_prompt, get_prompt_messages, get_scenario_temperature
 from services import knowlege_service
 from services.auth_service import AuthService
 from services.chat_service import ChatService
@@ -20,12 +21,12 @@ templates = Jinja2Templates(directory="templates")
 logger = logging.getLogger(__name__)
 
 
-def _build_chat_prompt(scenario, message, history, knowledge_base_name, context, use_knowledge_base: bool):
+def _build_chat_messages(scenario, message, history_messages, knowledge_base_name, context, use_knowledge_base: bool) -> list[BaseMessage]:
     prompt_scenario = scenario if use_knowledge_base else f"{scenario}_plain"
-    return get_prompt(
+    return get_prompt_messages(
         prompt_scenario,
+        history_messages=history_messages,
         context=context,
-        history=history,
         question=message,
         knowledge_base_name=knowledge_base_name,
     )
@@ -38,16 +39,24 @@ async def _load_chat_context(message: str, knowledge_base_id: str | None, db: Se
     if not knowledge_base_id:
         return context, knowledge_base_name
 
-    knowledge_base = await knowlege_service.get_knowledge_base_by_id(kb_id=knowledge_base_id, db=db, user_id=user_id)
+    knowledge_base = await knowlege_service.get_knowledge_base_by_id(kb_id=knowledge_base_id, db=db, user_id=user_id, allow_shared_read=True)
     if not knowledge_base:
         return context, knowledge_base_name
 
     knowledge_base_name = knowledge_base.name
-    retriever = await get_rag_retriever_by_kb(knowledge_base, user_id=user_id)
+    retriever = await get_rag_retriever_by_kb(knowledge_base)
     if retriever:
         try:
             docs = await retriever.get_relevant_documents(message)
-            context = "\n\n".join(doc.page_content for doc in docs)
+            parts = []
+            for doc in docs:
+                filename = doc.metadata.get("filename", "未知文件")
+                page = doc.metadata.get("page")
+                source = f"《{filename}》"
+                if page:
+                    source += f" 第{page}页"
+                parts.append(f"[来源: {source}]\n{doc.page_content}")
+            context = "\n\n---\n\n".join(parts)
             logger.info("从知识库 %s 检索到 %s 个相关文档", knowledge_base_id, len(docs))
         except Exception as e:
             logger.error("检索失败: %s", e, exc_info=True)
@@ -67,7 +76,7 @@ async def chat_page(request: Request):
     username = request.session.get("username")
     if username is None:
         return templates.TemplateResponse(request, "login.html", {"error": "用户会话已失效，请重新登录"})
-    return templates.TemplateResponse(request, "index.html", {"username": username})
+    return templates.TemplateResponse(request, "index.html", {"username": username, "user_id": request.session.get("user_id")})
 
 
 @app.get("/api/history")
@@ -154,20 +163,23 @@ async def chat_endpoint(
         return JSONResponse(status_code=404, content={"error": "对话不存在"})
 
     is_new_conversation = conversation.title == "新对话"
-    await ChatService.create_new_message(conversation_id, "user", message, db)
+    history_messages = await ChatService.get_conversation_history_messages(conversation_id, db)
 
-    history = await ChatService.get_conversation_history(conversation_id, db)
+    await ChatService.create_new_message(conversation_id, "user", message, db)
     context, knowledge_base_name = await _load_chat_context(message, knowledge_base_id, db, user_id)
-    prompt = _build_chat_prompt(
+    use_knowledge_base = bool(knowledge_base_id)
+    messages = _build_chat_messages(
         scenario,
         message,
-        history,
+        history_messages,
         knowledge_base_name,
         context,
-        use_knowledge_base=bool(knowledge_base_id),
+        use_knowledge_base=use_knowledge_base,
     )
+    prompt_scenario = scenario if use_knowledge_base else f"{scenario}_plain"
+    temperature = get_scenario_temperature(prompt_scenario)
     return StreamingResponse(
-        generate_response(request, prompt, conversation_id, is_new_conversation, message, db),
+        generate_response(request, messages, conversation_id, is_new_conversation, message, db, temperature=temperature),
         media_type="text/event-stream",
     )
 

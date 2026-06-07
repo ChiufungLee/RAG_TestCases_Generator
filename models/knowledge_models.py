@@ -1,6 +1,6 @@
 import uuid
 
-from sqlalchemy import Column, DateTime, ForeignKey, Integer, String, Text, func
+from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, String, Text, func
 from sqlalchemy.orm import relationship
 
 from models.database import Base
@@ -18,6 +18,7 @@ class KnowledgeBase(Base):
     created_at = Column(DateTime, default=func.now())
     updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
     file_count = Column(Integer, default=0)
+    visibility = Column(String(20), nullable=False, default="private")  # "private" / "shared"
 
     files = relationship("KnowledgeFile", back_populates="knowledge_base", cascade="all, delete-orphan")
 

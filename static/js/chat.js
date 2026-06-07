@@ -23,12 +23,8 @@ const tipsText = `
     <div class="message-container guide-text">
         <div class="message ai-message">
             <div class="message-content">
-                <p>你好！欢迎使用AI智能测试平台。我可以帮你：</p>
-                <p>- 梳理需求、设计测试策略、分析测试场景和测试点；</p>
-                <p>- 根据知识库和你的需求帮你生成测试用例；</p>
-                <p>- 排查产品问题、阅读用户手册等。</p>
-                <p>你可以上传文档，创建和使用新的知识库。</p>
-                <p>请选择左侧的功能场景，输入你的问题，让我们开始吧！</p>
+                <p>请在左侧选择功能场景，默认不使用 RAG 知识库。</p>
+                <p>在创建知识库并上传文档后，点击顶部的知识库列表进行切换。</p>
             </div>
         </div>
     </div>
@@ -177,7 +173,8 @@ async function loadKnowledgeBases() {
         knowledgeBases.forEach(kb => {
             const option = document.createElement('option');
             option.value = kb.id;
-            option.textContent = "> 知识库：" + kb.name;
+            const prefix = kb.visibility === 'shared' ? '[共享] ' : '';
+            option.textContent = prefix + "> 知识库：" + kb.name;
             selectElement.appendChild(option);
         });
 
@@ -507,6 +504,15 @@ function scrollToBottom() {
     elements.chatMessages.scrollTop = elements.chatMessages.scrollHeight;
 }
 
+// 智能滚动：仅在用户处于底部附近时自动滚动
+function smartScrollToBottom() {
+    const el = elements.chatMessages;
+    const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 100;
+    if (nearBottom) {
+        el.scrollTop = el.scrollHeight;
+    }
+}
+
 // 设置事件监听器
 function setupEventListeners() {
     // 场景切换
@@ -803,8 +809,8 @@ async function sendMessage() {
                             
                             // 渲染Markdown
                             contentElement.innerHTML = DOMPurify.sanitize(marked.parse(aiResponse));
-                            
-                            scrollToBottom();
+
+                            smartScrollToBottom();
                         }
                         
                         if (data.full_response) {

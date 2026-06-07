@@ -14,6 +14,8 @@ class User(Base):
     id = Column(Integer, primary_key=True, index=True, autoincrement=True)
     username = Column(String(50), unique=True, index=True, nullable=False)
     password = Column(String(100), nullable=False)
+    created_at = Column(DateTime, default=datetime.now, nullable=False)
+    last_login_at = Column(DateTime, nullable=True)
     
     # 关系
     conversations = relationship("Conversation", back_populates="user", cascade="all, delete-orphan")

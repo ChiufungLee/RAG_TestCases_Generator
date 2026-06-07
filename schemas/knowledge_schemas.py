@@ -8,10 +8,12 @@ from typing import List, Optional
 class KnowledgeBaseCreate(BaseModel):
     name: str
     description: Optional[str] = ""
+    visibility: str = "private"  # "private" / "shared"
 
 class KnowledgeBaseUpdate(BaseModel):
-    name: Optional[str]
-    description: Optional[str]
+    name: Optional[str] = None
+    description: Optional[str] = None
+    visibility: Optional[str] = None  # "private" / "shared"
 
 class KnowledgeFileResponse(BaseModel):
     id: str
@@ -30,4 +32,6 @@ class KnowledgeBaseResponse(BaseModel):
     file_count: int
     created_at: datetime
     updated_at: datetime
+    visibility: str = "private"
+    owner_user_id: Optional[int] = None
     files: List[KnowledgeFileResponse] = Field(default_factory=list)

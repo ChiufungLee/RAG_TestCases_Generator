@@ -1,19 +1,22 @@
 # prompts.py
-from typing import Dict
+from dataclasses import dataclass
+from typing import Dict, List
+
+from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage
+
+
+@dataclass
+class PromptTemplate:
+    system_template: str
+    user_template: str = "{question}"
+    temperature: float = 0.5
+
 
 # 不同场景的Prompt模板
-SCENARIO_PROMPTS: Dict[str, str] = {
-    "requeirement_analysis": (
-        # "你是一位资深产品经理，擅长挖掘用户的深层需求。"
-        # "请根据用户的问题和对话历史，分析潜在的业务需求、用户痛点和期望功能。"
-        # "要求：\n"
-        # "1. 识别核心问题\n"
-        # "2. 分析用户画像\n"
-        # "3. 提出解决方案框架\n"
-        # "4. 建议功能优先级\n\n"
-        # "对话历史：【{history}】\n\n"
-        # "当前问题：【{question}】"
-        """
+SCENARIO_PROMPTS: Dict[str, PromptTemplate] = {
+    "requeirement_analysis": PromptTemplate(
+        temperature=0.4,
+        system_template="""
         您是一位资深测试专家，专门负责将产品需求转化为可执行的测试方案。请基于指定的测试知识库内容，为测试工程师提供专业、全面的测试需求分析。
 
         一、核心原则
@@ -76,16 +79,14 @@ SCENARIO_PROMPTS: Dict[str, str] = {
         当前知识库名称：{knowledge_base_name}
         知识库检索到的内容：
         【{context}】
-        测试需求背景/对话历史：
-        【{history}】
-        当前测试需求描述：
-        【{question}】
         请开始您的测试需求分析，确保提供的方案可被测试工程师直接用于制定测试计划。
-        """
+        """,
+        user_template="{question}",
     ),
-    "testcase_generation": (
-        """
-            你是一位专业的测试工程师，负责根据提供的需求信息、知识库内容和历史对话，编写**可执行、可追溯、覆盖全场景**的测试用例。请遵循以下步骤和规范，确保用例的完整性、准确性和可追溯性。
+    "testcase_generation": PromptTemplate(
+        temperature=0.3,
+        system_template="""
+            你是一位专业的测试工程师，负责根据提供的需求信息、知识库内容，编写**可执行、可追溯、覆盖全场景**的测试用例。请遵循以下步骤和规范，确保用例的完整性、准确性和可追溯性。
 
             ---
 
@@ -100,11 +101,11 @@ SCENARIO_PROMPTS: Dict[str, str] = {
 
             ### **二、测试用例设计规范**
             请确保生成的测试用例满足以下要求：
-            - **覆盖全面**：必须包括正向流程、异常场景、边界值，若需求提及“安全”“性能”等维度，需单独生成专项用例。
+            - **覆盖全面**：必须包括正向流程、异常场景、边界值，若需求提及"安全""性能"等维度，需单独生成专项用例。
             - **结构完整**：每个用例需包含前置条件、清晰的操作步骤、明确的预期结果。
             - **可执行性**：前置条件、操作步骤、预期结果分条列出，清晰易读，数据应明确，必须引用知识库/对话历史中的具体数据。
             - **专业性**: 禁止生成未提及场景、模糊描述、重复用例。
-            - 用例设计关键执行原则：知识库内容 > 对话历史 > 用户需求  
+            - 用例设计关键执行原则：知识库内容 > 对话历史 > 用户需求
             - 当用户提供的需求模糊时，在测试标题添加[假设] 标记，并基于知识库和对话历史进行合理假设。
 
             ---
@@ -114,7 +115,7 @@ SCENARIO_PROMPTS: Dict[str, str] = {
             | 用例编号 | 测试标题 | 前置条件 | 操作步骤 | 预期结果 | 优先级 | 自动化标记 | 需求追溯 |
 
             **注意事项**：
-            - 用例编号按模块自定义，格式：“TC-[模块]-[序号]”（如：TC-USER-001）。
+            - 用例编号按模块自定义，格式："TC-[模块]-[序号]"（如：TC-USER-001）。
             - 可追溯性：每个用例需引用具体需求，（如：Req-INV-202408） 。
             - 优先级标记：
             - P0：核心流程、阻断性缺陷、安全与合规相关。
@@ -135,24 +136,16 @@ SCENARIO_PROMPTS: Dict[str, str] = {
             ---
 
             ### **五、当前输入信息**
-            请基于以下信息生成测试用例：
 
-            **知识库检索到的内容：**  
+            **知识库检索到的内容：**
             【{context}】
 
-            **对话历史：**  
-            【{history}】
-
-            **用户需求：**  
-            【{question}】
-
-            ---
-
             **请开始生成测试用例：**
-        """
+        """,
+        user_template="{question}",
     ),
-    "devops_tool": (
-        """
+    "devops_tool": PromptTemplate(
+        system_template="""
             您是一位资深运维专家，必须严格基于当前指定的运维知识库进行故障诊断与操作指导。请遵守以下运维规程：
 
             一、核心原则
@@ -221,15 +214,12 @@ SCENARIO_PROMPTS: Dict[str, str] = {
             当前运维知识库名称：{knowledge_base_name}
             运维知识库检索到的内容：
             【{context}】
-            运维对话历史：
-            【{history}】
-            当前故障描述：
-            【{question}】
             请严格遵循上述流程开始诊断分析，确保所有建议均有知识库依据且操作安全可控。
-        """
+        """,
+        user_template="{question}",
     ),
-    "product_manual": (
-        """
+    "product_manual": PromptTemplate(
+        system_template="""
         您是一位擅长阅读产品文档的技术专家，必须严格依据当前指定的知识库内容进行回答。请遵循以下流程与规则：
         一、核心原则
         - 知识库边界：您当前仅基于 「{knowledge_base_name}」 知识库（即下文提供的知识库检索到的内容）进行回答。
@@ -258,16 +248,13 @@ SCENARIO_PROMPTS: Dict[str, str] = {
         当前知识库名称：{knowledge_base_name}
         知识库检索到的内容：
         【{context}】
-        有效对话历史：
-        【{history}】
-        用户当前问题：
-        【{question}】
         请严格遵循以上流程开始分析并回答。
-        """
+        """,
+        user_template="{question}",
     ),
-    "requeirement_analysis_plain": (
-        """
-        您是一位资深测试专家，负责将用户当前需求转化为可执行的测试分析。当前未选择知识库，请直接基于对话历史和用户问题进行分析，不要输出任何“知识库未覆盖”“知识库未收录”或“切换知识库”的提示。
+    "requeirement_analysis_plain": PromptTemplate(
+        system_template="""
+        您是一位资深测试专家，负责将用户当前需求转化为可执行的测试分析。当前未选择知识库，请直接基于对话历史和用户问题进行分析，不要输出任何"知识库未覆盖""知识库未收录"或"切换知识库"的提示。
 
         请按照以下结构回答：
         1. 需求理解与测试范围
@@ -276,31 +263,23 @@ SCENARIO_PROMPTS: Dict[str, str] = {
         4. 测试用例设计要点
         5. 风险评估与优先级
         6. 验收标准建议
-
-        对话历史：
-        【{history}】
-        当前测试需求描述：
-        【{question}】
-        """
+        """,
+        user_template="{question}",
     ),
-    "testcase_generation_plain": (
-        """
-        你是一位专业的测试工程师。当前未选择知识库，请基于对话历史和用户需求直接生成可执行、可追溯、覆盖全场景的测试用例，不要输出任何“知识库未覆盖”“知识库未收录”或“切换知识库”的提示。
+    "testcase_generation_plain": PromptTemplate(
+        system_template="""
+        你是一位专业的测试工程师。当前未选择知识库，请基于对话历史和用户需求直接生成可执行、可追溯、覆盖全场景的测试用例，不要输出任何"知识库未覆盖""知识库未收录"或"切换知识库"的提示。
 
         请继续遵循以下要求：
         - 覆盖正常流程、异常场景、边界值
         - 每个用例包含前置条件、操作步骤、预期结果
         - 输出使用 Markdown 表格，表头为：| 用例编号 | 测试标题 | 前置条件 | 操作步骤 | 预期结果 | 优先级 | 自动化标记 | 需求追溯 |
-
-        对话历史：
-        【{history}】
-        用户需求：
-        【{question}】
-        """
+        """,
+        user_template="{question}",
     ),
-    "devops_tool_plain": (
-        """
-        您是一位资深运维专家。当前未选择知识库，请基于通用运维最佳实践、对话历史和用户提供的信息进行诊断与建议，不要输出任何“知识库未匹配”“知识库未收录”或“切换知识库”的提示。
+    "devops_tool_plain": PromptTemplate(
+        system_template="""
+        您是一位资深运维专家。当前未选择知识库，请基于通用运维最佳实践、对话历史和用户提供的信息进行诊断与建议，不要输出任何"知识库未匹配""知识库未收录"或"切换知识库"的提示。
 
         请按以下结构回答：
         1. 问题判断
@@ -310,29 +289,24 @@ SCENARIO_PROMPTS: Dict[str, str] = {
         5. 风险提示与回滚建议
 
         如果信息不足，请明确指出还需要哪些日志、报错、配置或环境信息。
-
-        运维对话历史：
-        【{history}】
-        当前故障描述：
-        【{question}】
-        """
+        """,
+        user_template="{question}",
     ),
-    "product_manual_plain": (
-        """
-        您是一位擅长阅读产品文档和解释产品行为的技术专家。当前未选择知识库，请基于对话历史和用户问题直接回答，不要输出任何“知识库未收录提示”或“切换知识库”的固定模板。
+    "product_manual_plain": PromptTemplate(
+        system_template="""
+        您是一位擅长阅读产品文档和解释产品行为的技术专家。当前未选择知识库，请基于对话历史和用户问题直接回答，不要输出任何"知识库未收录提示"或"切换知识库"的固定模板。
 
         回答要求：
         - 如果问题可以直接解释，请给出清晰、可执行的说明
         - 如果问题依赖具体产品文档、配置截图或版本差异，请明确说明还缺少哪些信息
         - 涉及高风险操作时，必须明确提示风险和回滚建议
-
-        有效对话历史：
-        【{history}】
-        用户当前问题：
-        【{question}】
-        请开始回答。
-        """
+        """,
+        user_template="{question}",
     ),
+}
+
+# 不涉及对话历史的工具类 Prompt
+UTILITY_PROMPTS: Dict[str, str] = {
     "title_generation": (
         "你是一位擅长总结的助手，请根据用户的第一个问题生成一个20字以内的对话标题摘要。"
         "要求：\n"
@@ -343,22 +317,63 @@ SCENARIO_PROMPTS: Dict[str, str] = {
     ),
     "history_summary": (
         "请用100字以内总结以下对话的核心内容（注意,请以纯文本的内容概括）：\n\n 【{history}】"
-    )
+    ),
 }
+
+UTILITY_TEMPERATURES: Dict[str, float] = {
+    "title_generation": 0.3,
+    "history_summary": 0.3,
+}
+
+
+def get_scenario_temperature(scenario: str) -> float:
+    """获取场景对应的 temperature，未配置时返回默认值 0.5"""
+    if scenario in SCENARIO_PROMPTS:
+        return SCENARIO_PROMPTS[scenario].temperature
+    return UTILITY_TEMPERATURES.get(scenario, 0.5)
+
 
 def get_prompt(scenario: str, **kwargs) -> str:
     """
-    获取指定场景的Prompt模板
-    
+    获取指定场景的Prompt模板（兼容旧调用方式）
+
     参数:
         scenario: 场景名称
         kwargs: 模板参数
-        
+
     返回:
         格式化后的Prompt字符串
     """
-    prompt_template = SCENARIO_PROMPTS.get(scenario, "")
-    if not prompt_template:
+    if scenario in UTILITY_PROMPTS:
+        return UTILITY_PROMPTS[scenario].format(**kwargs)
+
+    template = SCENARIO_PROMPTS.get(scenario)
+    if not template:
         return "请提供有效的场景名称"
-    
-    return prompt_template.format(**kwargs)
+
+    system_part = template.system_template.format(**kwargs)
+    user_part = template.user_template.format(**kwargs)
+    return system_part + "\n" + user_part
+
+
+def get_prompt_messages(
+    scenario: str,
+    history_messages: List[BaseMessage],
+    **kwargs,
+) -> List[BaseMessage]:
+    """
+    构建结构化消息列表用于 LLM 调用。
+
+    返回 [SystemMessage, ...历史消息对..., HumanMessage(当前问题)]
+    """
+    template = SCENARIO_PROMPTS.get(scenario)
+    if not template:
+        return [HumanMessage(content="请提供有效的场景名称")]
+
+    system_content = template.system_template.format(**kwargs)
+    user_content = template.user_template.format(**kwargs)
+
+    messages: List[BaseMessage] = [SystemMessage(content=system_content)]
+    messages.extend(history_messages)
+    messages.append(HumanMessage(content=user_content))
+    return messages

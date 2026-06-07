@@ -75,6 +75,7 @@
             </div>
 
             <!-- 文件上传区域 -->
+            {% if can_edit %}
             <div class="upload-section">
                 <h2 class="section-title">
                     <i class="fas fa-cloud-upload-alt"></i> 上传文档
@@ -105,6 +106,7 @@
                     </div>
                 </div>
             </div>
+            {% endif %}
 
             <!-- 文件列表区域 -->
             <div class="files-section">
@@ -153,11 +155,12 @@
             
 
             <footer class="footer-note">
-                <p>本地运行后可通过 /docs 查看接口文档</p>
+                <p>你可以通过邮箱 lzfdd937@163.com 联系我</p>
             </footer>
         </main>
     </div>
 
+    <script>window.canEdit = {{ 'true' if can_edit else 'false' }};</script>
     <script src="/static/js/kb_detail.js"></script>
 </body>
 </html>

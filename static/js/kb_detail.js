@@ -273,7 +273,9 @@ function renderFilesList(files) {
         const deleteIcon = document.createElement('i');
         deleteIcon.className = 'fas fa-trash-alt';
         deleteBtn.appendChild(deleteIcon);
-        actionWrap.appendChild(deleteBtn);
+        if (window.canEdit) {
+            actionWrap.appendChild(deleteBtn);
+        }
 
         actionCell.appendChild(actionWrap);
 
@@ -454,46 +456,46 @@ function initEventListeners() {
     backBtn.addEventListener('click', () => {
         window.location.href = '/knowledge';
     });
-    
-    // 选择文件按钮
-    selectFileBtn.addEventListener('click', () => {
-        fileInput.click();
-    });
-    
-    // 文件选择变化事件
-    fileInput.addEventListener('change', (e) => {
-        const files = e.target.files;
-        if (files.length > 0) {
-            // 只上传第一个文件（可以扩展为支持多文件上传）
-            uploadFile(files[0]);
-            
-            // 重置文件输入
-            fileInput.value = '';
-        }
-    });
-    
-    // 拖放文件事件
-    uploadArea.addEventListener('dragover', (e) => {
-        e.preventDefault();
-        uploadArea.classList.add('dragover');
-    });
-    
-    uploadArea.addEventListener('dragleave', (e) => {
-        e.preventDefault();
-        uploadArea.classList.remove('dragover');
-    });
-    
-    uploadArea.addEventListener('drop', (e) => {
-        e.preventDefault();
-        uploadArea.classList.remove('dragover');
-        
-        const files = e.dataTransfer.files;
-        if (files.length > 0) {
-            // 只上传第一个文件
-            uploadFile(files[0]);
-        }
-    });
-    
+
+    // 上传相关事件（仅在有上传权限时绑定）
+    if (selectFileBtn) {
+        selectFileBtn.addEventListener('click', () => {
+            fileInput.click();
+        });
+    }
+
+    if (fileInput) {
+        fileInput.addEventListener('change', (e) => {
+            const files = e.target.files;
+            if (files.length > 0) {
+                uploadFile(files[0]);
+                fileInput.value = '';
+            }
+        });
+    }
+
+    if (uploadArea) {
+        uploadArea.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            uploadArea.classList.add('dragover');
+        });
+
+        uploadArea.addEventListener('dragleave', (e) => {
+            e.preventDefault();
+            uploadArea.classList.remove('dragover');
+        });
+
+        uploadArea.addEventListener('drop', (e) => {
+            e.preventDefault();
+            uploadArea.classList.remove('dragover');
+
+            const files = e.dataTransfer.files;
+            if (files.length > 0) {
+                uploadFile(files[0]);
+            }
+        });
+    }
+
     // 窗口大小变化时调整布局
     window.addEventListener('resize', () => {
         if (window.innerWidth > 768) {

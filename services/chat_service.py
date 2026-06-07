@@ -1,7 +1,8 @@
 from datetime import datetime, timedelta
-from typing import Optional
+from typing import List, Optional
 
-from sqlalchemy import desc
+from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
+from sqlalchemy import desc, or_
 from sqlalchemy.orm import Session
 
 from models.chat import Conversation, Message
@@ -75,7 +76,10 @@ class ChatService:
         if knowledge_base_id:
             kb = (
                 db.query(KnowledgeBase)
-                .filter(KnowledgeBase.id == knowledge_base_id, KnowledgeBase.owner_user_id == user_id)
+                .filter(
+                    KnowledgeBase.id == knowledge_base_id,
+                    or_(KnowledgeBase.owner_user_id == user_id, KnowledgeBase.visibility == "shared"),
+                )
                 .first()
             )
             if not kb:
@@ -105,7 +109,7 @@ class ChatService:
         return message
 
     @staticmethod
-    async def get_conversation_history(conversation_id: str, db: Session, limit: int = 7):
+    async def get_conversation_history(conversation_id: str, db: Session, limit: int = 7) -> str:
         messages = (
             db.query(Message)
             .filter(Message.conversation_id == conversation_id)
@@ -114,12 +118,37 @@ class ChatService:
             .all()
         )
 
-        history = [
-            {"role": msg.role, "content": msg.content, "timestamp": msg.timestamp.isoformat()}
-            for msg in reversed(messages)
-        ]
+        if not messages:
+            return ""
 
-        return history
+        role_map = {"user": "用户", "assistant": "助手", "system": "系统"}
+        lines = []
+        for msg in reversed(messages):
+            role = role_map.get(msg.role, msg.role)
+            lines.append(f"{role}: {msg.content}")
+
+        return "\n".join(lines)
+
+    @staticmethod
+    async def get_conversation_history_messages(conversation_id: str, db: Session, limit: int = 7) -> List[BaseMessage]:
+        messages = (
+            db.query(Message)
+            .filter(Message.conversation_id == conversation_id)
+            .order_by(Message.timestamp.desc())
+            .limit(limit)
+            .all()
+        )
+
+        if not messages:
+            return []
+
+        role_to_class = {"user": HumanMessage, "assistant": AIMessage}
+        result = []
+        for msg in reversed(messages):
+            cls = role_to_class.get(msg.role)
+            if cls:
+                result.append(cls(content=msg.content))
+        return result
 
     @staticmethod
     async def get_conversation_message(user_id: int, conversation_id: str, db: Session):

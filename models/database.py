@@ -118,6 +118,14 @@ def _ensure_schema_updates(current_engine: Engine):
                 text("CREATE INDEX ix_knowledge_bases_owner_user_id ON knowledge_bases (owner_user_id)")
             )
 
+    if "users" in table_names:
+        user_columns = {c["name"] for c in inspector.get_columns("users")}
+        with current_engine.begin() as conn:
+            if "created_at" not in user_columns:
+                conn.execute(text("ALTER TABLE users ADD COLUMN created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP"))
+            if "last_login_at" not in user_columns:
+                conn.execute(text("ALTER TABLE users ADD COLUMN last_login_at DATETIME NULL"))
+
 
 
 def init_db():

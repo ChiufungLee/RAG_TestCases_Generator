@@ -1,4 +1,5 @@
 from contextlib import asynccontextmanager
+import logging
 
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
@@ -43,3 +44,8 @@ def create_app() -> FastAPI:
 
 
 app = create_app()
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s [%(name)s] %(message)s",
+)

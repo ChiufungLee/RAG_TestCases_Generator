@@ -56,11 +56,12 @@ async def knowledge_detail(request: Request, kb_id: str | None = None, db: Sessi
     if not kb_id:
         raise HTTPException(status_code=404, detail="知识库不存在")
 
-    kb = await knowlege_service.get_knowledge_base_by_id(kb_id=kb_id, db=db, user_id=user_id)
+    kb = await knowlege_service.get_knowledge_base_by_id(kb_id=kb_id, db=db, user_id=user_id, allow_shared_read=True)
     if not kb:
         raise HTTPException(status_code=404, detail="知识库不存在")
 
-    return templates.TemplateResponse(request, "knowledge_detail.html", {"kb_id": kb_id})
+    can_edit = kb.owner_user_id == user_id
+    return templates.TemplateResponse(request, "knowledge_detail.html", {"kb_id": kb_id, "can_edit": can_edit})
 
 
 @app.get("/api/knowledge-bases/{kb_id}", response_model=KnowledgeBaseResponse)
@@ -68,7 +69,7 @@ async def get_knowledge_base(request: Request, kb_id: str, db: Session = Depends
     user_id = AuthService.get_optional_request_user_id(request)
     if user_id is None:
         return AuthService.unauthorized_json_response()
-    kb = await knowlege_service.get_knowledge_base_by_id(kb_id=kb_id, db=db, user_id=user_id)
+    kb = await knowlege_service.get_knowledge_base_by_id(kb_id=kb_id, db=db, user_id=user_id, allow_shared_read=True)
     if not kb:
         raise HTTPException(status_code=404, detail="知识库不存在")
     return kb
@@ -141,7 +142,7 @@ async def get_collection_info(request: Request, kb_id: str, db: Session = Depend
     user_id = AuthService.get_optional_request_user_id(request)
     if user_id is None:
         return AuthService.unauthorized_json_response()
-    kb = await knowlege_service.get_knowledge_base_by_id(kb_id=kb_id, db=db, user_id=user_id)
+    kb = await knowlege_service.get_knowledge_base_by_id(kb_id=kb_id, db=db, user_id=user_id, allow_shared_read=True)
     if not kb:
         raise HTTPException(status_code=404, detail="知识库不存在")
 
@@ -157,7 +158,7 @@ async def get_knowledge_files(request: Request, kb_id: str, db: Session = Depend
     user_id = AuthService.get_optional_request_user_id(request)
     if user_id is None:
         return AuthService.unauthorized_json_response()
-    kb, files = await knowlege_service.get_knowledge_files_by_kb(db, kb_id=kb_id, user_id=user_id)
+    kb, files = await knowlege_service.get_knowledge_files_by_kb(db, kb_id=kb_id, user_id=user_id, allow_shared_read=True)
     if not kb:
         raise HTTPException(status_code=404, detail="知识库不存在")
 
@@ -170,7 +171,7 @@ async def preview_file(request: Request, file_id: str, db: Session = Depends(get
     if user_id is None:
         return AuthService.unauthorized_json_response()
     try:
-        file_record = await knowlege_service.get_knowledge_file(db, file_id=file_id, user_id=user_id)
+        file_record = await knowlege_service.get_knowledge_file(db, file_id=file_id, user_id=user_id, allow_shared_read=True)
         if not file_record:
             raise HTTPException(status_code=404, detail="文件不存在")
 

@@ -6,22 +6,13 @@ from typing import Any, Dict, List
 import chromadb
 from fastapi import Depends
 from langchain_core.documents import Document
-from openai import OpenAI
 from sqlalchemy.orm import Session
 
-from config import get_aliyun_api_key, get_aliyun_base_url, get_rag_db_path
+from config import get_embedding_client, get_rag_db_path
 from models.database import get_db
 from services import knowlege_service
 
 logger = logging.getLogger(__name__)
-
-
-
-def get_embedding_client() -> OpenAI:
-    return OpenAI(
-        api_key=get_aliyun_api_key(),
-        base_url=get_aliyun_base_url(),
-    )
 
 
 class ChromaRetriever:
@@ -51,22 +42,51 @@ class ChromaRetriever:
         logger.debug("embedding token 使用量: %s", response.usage.total_tokens)
         return response.data[0].embedding
 
-    async def get_relevant_documents(self, query: str, n_results: int = 3) -> List[Document]:
+    async def get_relevant_documents(
+        self,
+        query: str,
+        n_results: int = 3,
+        distance_threshold: float = 1.2,
+    ) -> List[Document]:
+        """从ChromaDB中检索与查询相关的文档。
+
+        先请求两倍数量的候选结果，再根据距离阈值过滤掉不相关的文档，
+        最终返回最多 n_results 条高相关度结果。
+
+        Args:
+            query: 用户查询文本。
+            n_results: 最终返回的最大文档数量，默认3。
+            distance_threshold: L2距离阈值，超过此值的结果被视为不相关而被过滤。
+                ChromaDB默认使用L2距离（值越小越相关），同主题文档通常在0.3-0.8之间，
+                超过1.2基本不相关。可根据实际检索效果调整。
+        """
         query_vector = await self.embed(query)
         results = self.collection.query(
             query_embeddings=[query_vector],
-            n_results=n_results,
-            include=["documents", "metadatas"],
+            n_results=min(n_results * 2, self.collection.count() or n_results * 2),
+            include=["documents", "metadatas", "distances"],
         )
 
         documents = []
         documents_groups = results.get("documents") or []
         metadata_groups = results.get("metadatas") or []
+        distance_groups = results.get("distances") or []
         for group_index, doc_list in enumerate(documents_groups):
             metadata_list = metadata_groups[group_index] if group_index < len(metadata_groups) else []
+            distance_list = distance_groups[group_index] if group_index < len(distance_groups) else []
             for item_index, text in enumerate(doc_list):
+                distance = distance_list[item_index] if item_index < len(distance_list) else float("inf")
+                if distance > distance_threshold:
+                    logger.debug("过滤低相关文档: distance=%.4f > threshold=%.4f", distance, distance_threshold)
+                    continue
                 metadata = metadata_list[item_index] if item_index < len(metadata_list) else {}
                 documents.append(Document(page_content=text, metadata=metadata or {}))
+                if len(documents) >= n_results:
+                    break
+            if len(documents) >= n_results:
+                break
+
+        logger.info("检索结果: 请求%d个, 阈值过滤后%d个 (threshold=%.2f)", n_results, len(documents), distance_threshold)
         return documents
 
     async def query(
@@ -86,10 +106,8 @@ class ChromaRetriever:
     @staticmethod
     async def clear_retriever_cache(kb_id: str):
         with _retriever_lock:
-            keys_to_delete = [key for key in _retriever_cache if key == kb_id or key.endswith(f":{kb_id}")]
-            for key in keys_to_delete:
-                del _retriever_cache[key]
-            if keys_to_delete:
+            if kb_id in _retriever_cache:
+                del _retriever_cache[kb_id]
                 logger.info("已清除知识库 %s 的检索器缓存", kb_id)
                 return True
             return False
@@ -105,10 +123,8 @@ _retriever_lock = Lock()
 _retriever_cache = {}
 
 
-def _build_kb_cache_key(kb_id: str, user_id: int | None) -> str:
-    if user_id is None:
-        return kb_id
-    return f"{user_id}:{kb_id}"
+def _build_kb_cache_key(kb_id: str) -> str:
+    return kb_id
 
 
 @functools.lru_cache(maxsize=2)
@@ -123,61 +139,30 @@ def reset_retriever_state():
     with _retriever_lock:
         _retriever_cache.clear()
     _get_cached_chroma_client.cache_clear()
+    get_embedding_client.cache_clear()
 
-
-
-def get_rag_retriever(scenario: str):
-    collection_map = {
-        "devops_tool": "devops_tool",
-        "product_manual": "product_manual",
-    }
-
-    if scenario not in collection_map:
-        return None
-
-    collection_name = collection_map[scenario]
-
-    with _retriever_lock:
-        if scenario in _retriever_cache:
-            return _retriever_cache[scenario]
-
-    try:
-        chroma_client = _get_cached_chroma_client()
-        retriever = ChromaRetriever(
-            collection_name=collection_name,
-            chroma_client=chroma_client,
-            model_name="text-embedding-v4",
-        )
-        with _retriever_lock:
-            _retriever_cache[scenario] = retriever
-        logger.info("已为场景 %s 创建并缓存检索器", scenario)
-        return retriever
-    except Exception as e:
-        logger.error("创建 %s 场景检索器失败: %s", scenario, e, exc_info=True)
-        return None
 
 
 async def get_rag_retriever_by_kb(
     kb_or_id,
     db: Session = Depends(get_db),
-    user_id: int | None = None,
 ):
     try:
         if isinstance(kb_or_id, str):
             kb_id = kb_or_id
-            cache_key = _build_kb_cache_key(kb_id, user_id)
+            cache_key = _build_kb_cache_key(kb_id)
             with _retriever_lock:
                 if cache_key in _retriever_cache:
                     logger.info("从缓存获取知识库 %s 的检索器", kb_id)
                     return _retriever_cache[cache_key]
 
-            kb = await knowlege_service.get_knowledge_base_by_id(db=db, kb_id=kb_id, user_id=user_id)
+            kb = await knowlege_service.get_knowledge_base_by_id(db=db, kb_id=kb_id)
             if not kb:
                 return None
         else:
             kb = kb_or_id
             kb_id = kb.id
-            cache_key = _build_kb_cache_key(kb_id, user_id)
+            cache_key = _build_kb_cache_key(kb_id)
             with _retriever_lock:
                 if cache_key in _retriever_cache:
                     logger.info("从缓存获取知识库 %s 的检索器", kb_id)

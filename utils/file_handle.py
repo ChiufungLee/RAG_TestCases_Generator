@@ -5,14 +5,13 @@ import uuid
 from typing import List, Optional
 
 import chromadb
-from langchain_community.document_loaders import PyPDFLoader
 from langchain_core.documents import Document
 from langchain_text_splitters import RecursiveCharacterTextSplitter
-from openai import OpenAI
+from unstructured.chunking.title import chunk_by_title
+from unstructured.partition.pdf import partition_pdf
 
 from config import (
-    get_aliyun_api_key,
-    get_aliyun_base_url,
+    get_embedding_client,
     get_rag_db_path,
     get_temp_upload_dir,
     get_upload_dir,
@@ -21,18 +20,9 @@ from config import (
 logger = logging.getLogger(__name__)
 
 
-
 def ensure_storage_dirs():
     os.makedirs(get_upload_dir(), exist_ok=True)
     os.makedirs(get_temp_upload_dir(), exist_ok=True)
-
-
-@functools.lru_cache(maxsize=1)
-def get_openai_client() -> OpenAI:
-    return OpenAI(
-        api_key=get_aliyun_api_key(),
-        base_url=get_aliyun_base_url(),
-    )
 
 
 @functools.lru_cache(maxsize=1)
@@ -41,17 +31,16 @@ def get_chromadb_client():
     return chromadb.PersistentClient(path=get_rag_db_path())
 
 
-
 def reset_document_processor_state():
-    get_openai_client.cache_clear()
+    get_embedding_client.cache_clear()
     get_chromadb_client.cache_clear()
     get_document_processor.cache_clear()
 
 
 class DocumentProcessor:
     @property
-    def client(self) -> OpenAI:
-        return get_openai_client()
+    def client(self):
+        return get_embedding_client()
 
     @property
     def chromadb_client(self):
@@ -72,16 +61,142 @@ class DocumentProcessor:
             return []
 
     def load_pdf(self, file_path: str) -> List[Document]:
-        """加载PDF文件并返回文档列表"""
+        """使用 unstructured 加载 PDF 并按文档结构分块"""
         try:
-            loader = PyPDFLoader(file_path)
-            docs = loader.load()
-            for doc in docs:
-                doc.page_content = doc.page_content.replace("\n", " ").strip()
-            return docs
+            elements = partition_pdf(filename=file_path, strategy="fast", languages=["zh"])
+            logger.info("partition_pdf 提取元素数: %d", len(elements))
+            if not elements:
+                logger.warning("partition_pdf 未提取到任何元素，尝试回退方案")
+                return self._load_pdf_fallback(file_path)
+
+            chunks = chunk_by_title(
+                elements,
+                max_characters=1500,
+                combine_text_under_n_chars=500,
+                overlap=100,
+            )
+            logger.info("chunk_by_title 生成块数: %d", len(chunks))
+
+            documents = []
+            for chunk in chunks:
+                text = str(chunk).strip()
+                if not text:
+                    continue
+                metadata = {"source": file_path}
+                if hasattr(chunk, "metadata") and chunk.metadata:
+                    page_num = getattr(chunk.metadata, "page_number", None)
+                    if page_num is not None:
+                        metadata["page"] = page_num
+                documents.append(Document(page_content=text, metadata=metadata))
+
+            if not documents:
+                logger.warning("结构分块后无有效文档，尝试回退方案")
+                return self._load_pdf_fallback(file_path)
+
+            # 对仍超过 2000 字符的 chunk 做二次分割
+            result = []
+            splitter = RecursiveCharacterTextSplitter(
+                chunk_size=1500,
+                chunk_overlap=200,
+                separators=["\n\n", "。", "！", "？", "\n", " ", ""],
+            )
+            for doc in documents:
+                if len(doc.page_content) > 2000:
+                    result.extend(splitter.split_documents([doc]))
+                else:
+                    result.append(doc)
+
+            logger.info("PDF 加载完成: 结构分块数=%d, 最终分块数=%d", len(documents), len(result))
+            return result
         except Exception as e:
             logger.error("PDF加载失败: %s", e, exc_info=True)
             raise
+
+    def _load_pdf_fallback(self, file_path: str) -> List[Document]:
+        """回退方案：使用 PyPDFLoader + RecursiveCharacterTextSplitter"""
+        from langchain_community.document_loaders import PyPDFLoader
+
+        logger.info("使用回退方案（PyPDFLoader + RecursiveCharacterTextSplitter）")
+        loader = PyPDFLoader(file_path)
+        docs = loader.load()
+        logger.info("PyPDFLoader 加载页数: %d", len(docs))
+        for i, doc in enumerate(docs):
+            raw_len = len(doc.page_content)
+            doc.page_content = doc.page_content.replace("\r\n", " ").replace("\n", " ").replace("\r", " ").strip()
+            logger.info("页面 %d: 原始长度=%d, 清理后长度=%d", i, raw_len, len(doc.page_content))
+
+        docs = [doc for doc in docs if doc.page_content]
+        logger.info("有效页面数: %d", len(docs))
+
+        if not docs:
+            logger.warning("PyPDFLoader 提取到的所有页面内容为空，尝试OCR方案")
+            return self._load_pdf_with_ocr(file_path)
+
+        splitter = RecursiveCharacterTextSplitter(
+            chunk_size=1000,
+            chunk_overlap=200,
+            separators=["\n\n", "。", "！", "？", "\n", " ", ""],
+        )
+        result = splitter.split_documents(docs)
+        logger.info("回退方案生成分片数: %d", len(result))
+
+        if not result:
+            logger.warning("回退方案分片数为0，尝试OCR方案")
+            return self._load_pdf_with_ocr(file_path)
+
+        return result
+
+    def _load_pdf_with_ocr(self, file_path: str) -> List[Document]:
+        """OCR回退方案：用于图片型PDF"""
+        logger.info("使用OCR方案提取PDF内容")
+        try:
+            elements = partition_pdf(
+                filename=file_path,
+                strategy="hi_res",
+                languages=["zh"],
+            )
+            logger.info("OCR方案提取元素数: %d", len(elements))
+            if not elements:
+                logger.warning("OCR方案也未提取到任何内容")
+                return []
+
+            chunks = chunk_by_title(
+                elements,
+                max_characters=1500,
+                combine_text_under_n_chars=500,
+                overlap=100,
+            )
+
+            documents = []
+            for chunk in chunks:
+                text = str(chunk).strip()
+                if not text:
+                    continue
+                metadata = {"source": file_path}
+                if hasattr(chunk, "metadata") and chunk.metadata:
+                    page_num = getattr(chunk.metadata, "page_number", None)
+                    if page_num is not None:
+                        metadata["page"] = page_num
+                documents.append(Document(page_content=text, metadata=metadata))
+
+            if not documents:
+                logger.warning("OCR方案未生成有效文档")
+                return []
+
+            splitter = RecursiveCharacterTextSplitter(
+                chunk_size=1000,
+                chunk_overlap=200,
+                separators=["\n\n", "。", "！", "？", "\n", " ", ""],
+            )
+            result = splitter.split_documents(documents)
+            logger.info("OCR方案生成分片数: %d", len(result))
+            return result
+        except Exception as e:
+            logger.error(
+                "OCR方案失败（可能缺少OCR依赖）: %s",
+                e,
+            )
+            return []
 
     def split_documents(
         self,
@@ -89,13 +204,8 @@ class DocumentProcessor:
         chunk_size: int = 1000,
         chunk_overlap: int = 200,
     ) -> list[Document]:
-        """文档分块"""
-        text_splitter = RecursiveCharacterTextSplitter(
-            chunk_size=chunk_size,
-            chunk_overlap=chunk_overlap,
-            add_start_index=True,
-        )
-        return text_splitter.split_documents(docs)
+        """文档分块（已由 load_pdf 完成结构感知分块，直接返回）"""
+        return docs
 
     def save_to_chroma(
         self,
@@ -106,9 +216,14 @@ class DocumentProcessor:
         """保存文档分片到ChromaDB"""
         try:
             collection = self.chromadb_client.get_or_create_collection(name=collection_name)
+            logger.info("save_to_chroma: 收到 %d 个分片", len(splits))
 
             chunk_count = 0
+            embed_fail = 0
             for split in splits:
+                if not split.page_content.strip():
+                    continue
+
                 doc_id = f"{collection_name}_{uuid.uuid4().hex}"
 
                 metadata = split.metadata.copy() if split.metadata else {}
@@ -117,6 +232,7 @@ class DocumentProcessor:
 
                 vector = self.embed(split.page_content)
                 if not vector:
+                    embed_fail += 1
                     continue
 
                 collection.add(
@@ -127,7 +243,9 @@ class DocumentProcessor:
                 )
                 chunk_count += 1
 
-            logger.info("成功保存 %s 个分片到集合 %s", chunk_count, collection_name)
+            if embed_fail > 0:
+                logger.warning("save_to_chroma: %d 个分片 embedding 失败被跳过", embed_fail)
+            logger.info("成功保存 %d 个分片到集合 %s", chunk_count, collection_name)
             return chunk_count
 
         except Exception as e:
@@ -167,7 +285,6 @@ class DocumentProcessor:
         except Exception as e:
             logger.error("获取集合信息失败: %s", e, exc_info=True)
             return None
-
 
 
 @functools.lru_cache(maxsize=1)

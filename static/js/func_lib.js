@@ -153,6 +153,7 @@ function renderKnowledgeList(data = knowledgeData) {
         const icon = icons[index % icons.length];
         const createdDate = new Date(item.created_at || item.updated_at).toLocaleDateString('zh-CN');
         const updatedDate = new Date(item.updated_at).toLocaleDateString('zh-CN');
+        const isOwner = item.owner_user_id === window.currentUserId;
 
         const card = document.createElement('div');
         card.className = 'lib-card';
@@ -172,6 +173,13 @@ function renderKnowledgeList(data = knowledgeData) {
         const nameEl = document.createElement('h3');
         nameEl.className = 'lib-name';
         nameEl.textContent = item.name;
+        if (item.visibility === 'shared') {
+            const sharedBadge = document.createElement('span');
+            sharedBadge.className = 'shared-badge';
+            sharedBadge.textContent = '共享';
+            sharedBadge.style.cssText = 'display:inline-block;margin-left:8px;padding:1px 8px;font-size:0.7rem;background:#e8f5e9;color:#2e7d32;border-radius:10px;vertical-align:middle;font-weight:normal;';
+            nameEl.appendChild(sharedBadge);
+        }
         const countEl = document.createElement('p');
         countEl.className = 'lib-count';
         countEl.textContent = `${item.file_count || 0} 个文档`;
@@ -260,7 +268,9 @@ function renderKnowledgeList(data = knowledgeData) {
         moreContainer.appendChild(moreBtn);
         moreContainer.appendChild(dropdown);
         footer.appendChild(openBtn);
-        footer.appendChild(moreContainer);
+        if (isOwner) {
+            footer.appendChild(moreContainer);
+        }
 
         card.appendChild(header);
         card.appendChild(body);
@@ -284,7 +294,8 @@ async function createKnowledgeBase(name, description) {
             },
             body: JSON.stringify({
                 name: name,
-                description: description
+                description: description,
+                visibility: document.getElementById('libVisibility') ? document.getElementById('libVisibility').value : 'private'
             })
         });
         
@@ -530,6 +541,30 @@ function showEditModal(knowledgeBase) {
     descGroup.appendChild(descLabel);
     descGroup.appendChild(descInput);
 
+    const visGroup = document.createElement('div');
+    visGroup.className = 'form-group';
+    const visLabel = document.createElement('label');
+    visLabel.htmlFor = 'editLibVisibility';
+    visLabel.textContent = '可见性';
+    const visSelect = document.createElement('select');
+    visSelect.id = 'editLibVisibility';
+    visSelect.style.cssText = 'width:100%;padding:8px 12px;border:1px solid #ddd;border-radius:6px;font-size:0.95rem;';
+    const optPrivate = document.createElement('option');
+    optPrivate.value = 'private';
+    optPrivate.textContent = '私有 - 仅自己可见';
+    const optShared = document.createElement('option');
+    optShared.value = 'shared';
+    optShared.textContent = '共享 - 所有人可查看和使用';
+    if (knowledgeBase.visibility === 'shared') {
+        optShared.selected = true;
+    } else {
+        optPrivate.selected = true;
+    }
+    visSelect.appendChild(optPrivate);
+    visSelect.appendChild(optShared);
+    visGroup.appendChild(visLabel);
+    visGroup.appendChild(visSelect);
+
     const actions = document.createElement('div');
     actions.className = 'modal-actions';
     const cancelBtn = document.createElement('button');
@@ -547,6 +582,7 @@ function showEditModal(knowledgeBase) {
     editForm.appendChild(hiddenInput);
     editForm.appendChild(nameGroup);
     editForm.appendChild(descGroup);
+    editForm.appendChild(visGroup);
     editForm.appendChild(actions);
 
     modalContent.appendChild(modalHeader);
@@ -620,28 +656,29 @@ function showEditModal(knowledgeBase) {
                 },
                 body: JSON.stringify({
                     name: name,
-                    description: description
+                    description: description,
+                    visibility: document.getElementById('editLibVisibility').value
                 })
             });
-            
+
             if (!response.ok) {
                 const errorData = await response.json();
                 throw new Error(errorData.detail || `更新失败，状态码: ${response.status}`);
             }
-            
+
             const updatedKnowledgeBase = await response.json();
-            
+
             // 更新本地数据
             const index = knowledgeData.findIndex(item => item.id === kbId);
             if (index !== -1) {
                 knowledgeData[index] = updatedKnowledgeBase;
             }
-            
+
             renderKnowledgeList();
             closeEditModal();
-            
+
             showMessage(`知识库 "${name}" 更新成功！`, 'success');
-            
+
         } catch (error) {
             console.error('更新知识库失败:', error);
             showMessage(`更新知识库失败: ${error.message}`, 'error');
@@ -801,8 +838,8 @@ function showAboutModal() {
         { tag: 'p', text: '- 自动将生成的测试用例同步到测试管理工具（如TestRail、Jira）' },
         { tag: 'p', text: '- 允许用户自定义测试用例模板、生成规则' },
         { tag: 'p', text: '- 集成更多AI模型，提升生成质量' },
-        { tag: 'p', text: '本项目基于 FastAPI、LangChain 和本地知识库检索能力构建。' },
-        { tag: 'p', text: '本地运行后可通过 /docs 查看接口文档，并通过页面完成知识库管理与聊天测试。' },
+        { tag: 'p', text: '本项目基于 FastAPI、LangChain 和 RAG 知识库检索进行构建。' },
+        { tag: 'p', text: '如有问题可联系 lzfdd937@163.com' },
     ];
 
     contentBlocks.forEach(({ tag, text }) => {

@@ -35,8 +35,6 @@ class AuthService:
 
         if should_upgrade:
             user.password = AuthService.hash_password(password)
-            db.commit()
-            db.refresh(user)
 
         if hasattr(user, "is_active") and not user.is_active:
             return {
@@ -44,11 +42,16 @@ class AuthService:
                 "error": "用户已被禁用",
             }
 
+        user.last_login_at = datetime.now()
+        db.commit()
+        db.refresh(user)
+
         return {
             "success": True,
             "user_id": user.id,
             "username": user.username,
             "login_time": datetime.now().isoformat(),
+            "last_login_at": user.last_login_at.isoformat() if user.last_login_at else None,
         }
 
     @staticmethod
@@ -92,6 +95,7 @@ class AuthService:
             new_user = User(
                 username=username,
                 password=AuthService.hash_password(password),
+                created_at=datetime.now(),
                 **kwargs,
             )
 

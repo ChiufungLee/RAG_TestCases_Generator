@@ -2,7 +2,9 @@ import asyncio
 import functools
 import json
 import logging
-from typing import AsyncGenerator
+from typing import AsyncGenerator, List, Union
+
+from langchain_core.messages import BaseMessage, HumanMessage
 
 from config import get_deepseek_api_key
 
@@ -11,7 +13,7 @@ from sqlalchemy.orm import Session
 
 from langchain.chat_models import init_chat_model
 from models.chat import Conversation, Message
-from prompts.prompts import get_prompt
+from prompts.prompts import get_prompt, get_scenario_temperature
 
 logger = logging.getLogger(__name__)
 
@@ -37,13 +39,21 @@ def reset_llm_state():
     _get_cached_llm_model.cache_clear()
 
 
-async def call_llm_model(prompt: str) -> AsyncGenerator[str, None]:
-    """异步调用LLM模型并流式返回token（优化后）"""
+async def call_llm_model(prompt: Union[str, List[BaseMessage]], temperature: float | None = None) -> AsyncGenerator[str, None]:
+    """异步调用LLM模型并流式返回token"""
     model = _get_cached_llm_model()
+    if temperature is not None:
+        model = model.bind(temperature=temperature)
     full_response = ""
 
+    llm_input: Union[str, List[BaseMessage]]
+    if isinstance(prompt, str):
+        llm_input = [HumanMessage(content=prompt)]
+    else:
+        llm_input = prompt
+
     try:
-        aiter = model.astream(prompt).__aiter__()
+        aiter = model.astream(llm_input).__aiter__()
         while True:
             try:
                 token = await asyncio.wait_for(aiter.__anext__(), timeout=180)
@@ -63,13 +73,13 @@ async def call_llm_model(prompt: str) -> AsyncGenerator[str, None]:
             logger.debug("完整响应长度: %s", len(full_response))
 
 
-async def generate_response(request, prompt, conversation_id, is_new_conversation, message, db):
+async def generate_response(request, prompt: Union[str, List[BaseMessage]], conversation_id, is_new_conversation, message, db, temperature: float | None = None):
     ai_response = ""
     full_response_saved = False
     completed = False
 
     try:
-        words = call_llm_model(prompt)
+        words = call_llm_model(prompt, temperature=temperature)
         async for token in words:
             if await request.is_disconnected():
                 logger.info("客户端已断开连接")
@@ -135,8 +145,9 @@ async def generate_and_update_title(user_message: str, conversation_id: str, db:
 
     try:
         title_prompt = get_prompt(scenario="title_generation", question=user_message)
+        title_temperature = get_scenario_temperature("title_generation")
         title_tokens = []
-        async for token in call_llm_model(title_prompt):
+        async for token in call_llm_model(title_prompt, temperature=title_temperature):
             title_tokens.append(token)
 
         title_str = "".join(title_tokens)
@@ -144,8 +155,8 @@ async def generate_and_update_title(user_message: str, conversation_id: str, db:
 
         title = re.sub(r"[^a-zA-Z0-9\u4e00-\u9fa5\s]", "", title_str).strip() or fallback_title
 
-        if len(title) > 10:
-            title = title[:10] + "..."
+        if len(title) > 30:
+            title = title[:30] + "..."
 
         conversation.title = title
         db.add(conversation)
