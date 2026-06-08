@@ -4,7 +4,7 @@ import json
 import logging
 from typing import AsyncGenerator, List, Union
 
-from langchain_core.messages import BaseMessage, HumanMessage
+from langchain_core.messages import BaseMessage, HumanMessage, SystemMessage
 
 from config import get_deepseek_api_key
 
@@ -144,13 +144,17 @@ async def generate_and_update_title(user_message: str, conversation_id: str, db:
     fallback_title = (user_message[:20] + "...") if len(user_message) > 20 else user_message
 
     try:
-        title_prompt = get_prompt(scenario="title_generation", question=user_message)
+        title_system = get_prompt(scenario="title_generation", question=user_message)
         title_temperature = get_scenario_temperature("title_generation")
-        title_tokens = []
-        async for token in call_llm_model(title_prompt, temperature=title_temperature):
-            title_tokens.append(token)
+        model = _get_cached_llm_model()
+        model = model.bind(temperature=title_temperature, max_tokens=50)
 
-        title_str = "".join(title_tokens)
+        response = await model.ainvoke([
+            SystemMessage(content=title_system),
+            HumanMessage(content=user_message),
+        ])
+        title_str = response.content
+
         import re
 
         title = re.sub(r"[^a-zA-Z0-9\u4e00-\u9fa5\s]", "", title_str).strip() or fallback_title

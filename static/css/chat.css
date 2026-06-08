@@ -256,10 +256,13 @@ body {
 @media (max-width: 768px) {
     .knowledge-base-selector {
         max-width: 100%;
+        width: calc(100vw - 32px);
     }
-    
+
     .kb-select {
         font-size: 16px; /* 移动端增加字体大小便于触摸 */
+        width: 100%;
+        box-sizing: border-box;
     }
 }
 
@@ -281,7 +284,7 @@ body {
 }
 
 .message {
-    padding: 16px;
+    padding: 16px 24px 16px 16px;
     border-radius: 8px;
     line-height: 1.6;
     position: relative;
@@ -347,6 +350,7 @@ body {
 
 .message-content {
     padding-left: 40px;
+    overflow-x: auto;
 }
 
 .message-content ul {
@@ -754,10 +758,12 @@ body {
 
 /* 表格样式 */
 .message-content table {
-    width: 90%;
+    width: 100%;
     border-collapse: collapse;
     margin: 10px 0;
     font-size: 14px;
+    display: block;
+    overflow-x: auto;
 }
 
 .message-content th, 
@@ -853,7 +859,9 @@ body {
     
     /* 主内容区调整 */
     .main-content {
-        min-height: calc(100vh - 120px);
+        flex: 1;
+        min-height: 0;
+        overflow: hidden;
     }
     
     /* 功能网格调整为单行滚动 */
@@ -948,10 +956,10 @@ body {
         border: none;
         font-size: 16px;
         padding: 8px 12px;
-        position: absolute;
-        left: 10px;
+        position: fixed;
+        right: 10px;
         top: 16px;
-        z-index: 101;
+        z-index: 201;
         border-radius: 5px;
     }
     
@@ -965,21 +973,21 @@ body {
         display: block;
         position: fixed;
         top: 0;
-        left: 0;
+        right: 0;
         height: 100%;
         width: 280px;
         background: white;
         z-index: 200;
         padding: 20px 15px;
-        box-shadow: 2px 0 10px rgba(0,0,0,0.1);
+        box-shadow: -2px 0 10px rgba(0,0,0,0.1);
         overflow-y: auto;
     }
-    
+
     .history-open .history-overlay {
         position: fixed;
         top: 0;
-        left: var(--sidebar-width);
-        right: 0;
+        left: 0;
+        right: 280px;
         bottom: 0;
         background: rgba(0,0,0,0.3);
         z-index: 199;
@@ -994,7 +1002,7 @@ body {
         font-size: 24px;
         color: var(--text-secondary);
     }
-    .overlay-hint {
+    .history-open .overlay-hint {
         display: block;
         color: #666;
         padding: 8px 16px;
@@ -1103,10 +1111,10 @@ body {
         border-radius: 6px;
         padding: 8px 12px;
         width: 80%;
+        margin: 0 auto;
         font-weight: 500;
         cursor: pointer;
         transition: background-color 0.2s;
-        margin-left: 45px;
     }
     
     .chat-messages {
@@ -1119,23 +1127,6 @@ body {
     
     .input-container {
         padding: 10px 12px;
-    }
-    .main-content {
-        flex: 1;
-        display: flex;
-        flex-direction: column;
-        height: 100%;
-        overflow: hidden;
-    }
-
-    .chat-messages {
-        flex: 1;
-        overflow-y: auto;
-        padding: 24px;
-        background-color: var(--bg-white);
-        /* 确保内容能滚动 */
-        position: relative;
-        z-index: 1;
     }
 
 }

@@ -45,7 +45,7 @@ class ChromaRetriever:
     async def get_relevant_documents(
         self,
         query: str,
-        n_results: int = 3,
+        n_results: int = 5,
         distance_threshold: float = 1.2,
     ) -> List[Document]:
         """从ChromaDB中检索与查询相关的文档。
@@ -92,7 +92,7 @@ class ChromaRetriever:
     async def query(
         self,
         query_text: str,
-        n_results: int = 3,
+        n_results: int = 5,
         **kwargs,
     ) -> Dict[str, Any]:
         query_vector = await self.embed(query_text)

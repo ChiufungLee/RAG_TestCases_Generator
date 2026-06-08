@@ -130,7 +130,7 @@ class ChatService:
         return "\n".join(lines)
 
     @staticmethod
-    async def get_conversation_history_messages(conversation_id: str, db: Session, limit: int = 7) -> List[BaseMessage]:
+    async def get_conversation_history_messages(conversation_id: str, db: Session, limit: int = 15) -> List[BaseMessage]:
         messages = (
             db.query(Message)
             .filter(Message.conversation_id == conversation_id)
