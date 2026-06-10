@@ -211,3 +211,30 @@ class ChatService:
         if user_id is not None:
             return await ChatService.get_user_conversation(user_id, conversation_id, db)
         return db.query(Conversation).filter(Conversation.id == conversation_id).first()
+
+    @staticmethod
+    async def get_last_user_message(conversation_id: str, db: Session) -> Optional[Message]:
+        return (
+            db.query(Message)
+            .filter(Message.conversation_id == conversation_id, Message.role == "user")
+            .order_by(Message.timestamp.desc())
+            .first()
+        )
+
+    @staticmethod
+    async def get_last_ai_message(conversation_id: str, db: Session) -> Optional[Message]:
+        return (
+            db.query(Message)
+            .filter(Message.conversation_id == conversation_id, Message.role == "assistant")
+            .order_by(Message.timestamp.desc())
+            .first()
+        )
+
+    @staticmethod
+    async def delete_message(message_id: int, db: Session) -> bool:
+        message = db.query(Message).filter(Message.id == message_id).first()
+        if not message:
+            return False
+        db.delete(message)
+        db.commit()
+        return True

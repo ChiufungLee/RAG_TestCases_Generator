@@ -792,7 +792,7 @@ body {
 }
 
 /* 修改导出按钮样式，放在右下角 */
-.export-btn {
+.export-btn, .regenerate-btn, .edit-btn {
     background: #f0f0f0;
     border: 1px solid #d9d9d9;
     border-radius: 4px;
@@ -801,11 +801,71 @@ body {
     cursor: pointer;
     color: #333;
     display: inline-block;
+    margin-left: 8px;
 }
 
-.export-btn:hover {
+.message-actions > button:first-child {
+    margin-left: 0;
+}
+
+.export-btn:hover, .regenerate-btn:hover, .edit-btn:hover {
     background: #e6e6e6;
     border-color: #ccc;
+}
+
+/* 编辑模式 */
+.edit-textarea {
+    width: 100%;
+    min-height: 60px;
+    padding: 10px;
+    border: 1px solid #d9d9d9;
+    border-radius: 6px;
+    font-size: 14px;
+    font-family: inherit;
+    resize: vertical;
+    box-sizing: border-box;
+}
+
+.edit-textarea:focus {
+    outline: none;
+    border-color: #1890ff;
+    box-shadow: 0 0 0 2px rgba(24, 144, 255, 0.2);
+}
+
+.edit-actions {
+    display: flex;
+    gap: 8px;
+    margin-top: 8px;
+    justify-content: flex-end;
+}
+
+.edit-cancel-btn {
+    background: #fff;
+    border: 1px solid #d9d9d9;
+    border-radius: 4px;
+    padding: 4px 12px;
+    font-size: 13px;
+    cursor: pointer;
+    color: #666;
+}
+
+.edit-cancel-btn:hover {
+    background: #f5f5f5;
+}
+
+.edit-submit-btn {
+    background: #1890ff;
+    border: 1px solid #1890ff;
+    border-radius: 4px;
+    padding: 4px 12px;
+    font-size: 13px;
+    cursor: pointer;
+    color: #fff;
+}
+
+.edit-submit-btn:hover {
+    background: #40a9ff;
+    border-color: #40a9ff;
 }
 
 /* 调整消息容器样式 */

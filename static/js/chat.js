@@ -173,8 +173,8 @@ async function loadKnowledgeBases() {
         knowledgeBases.forEach(kb => {
             const option = document.createElement('option');
             option.value = kb.id;
-            const prefix = kb.visibility === 'shared' ? '[共享] ' : '';
-            option.textContent = prefix + "> 知识库：" + kb.name;
+            const prefix = kb.visibility === 'shared' ? '【共享】 ' : '';
+            option.textContent = prefix + kb.name;
             selectElement.appendChild(option);
         });
 
@@ -424,16 +424,28 @@ async function loadConversation(conversationId, knowledgeBaseId = null) {
 function renderConversation(conversation) {
 
     elements.chatMessages.innerHTML = '';
-    
+
     conversation.messages.forEach(message => {
         addMessageToChat(message);
     });
-    
+
+    // 为最后一条AI消息添加重新生成按钮
+    if (appState.currentConversation) {
+        const aiMessages = elements.chatMessages.querySelectorAll('.ai-message');
+        if (aiMessages.length > 0) {
+            const lastAiMessage = aiMessages[aiMessages.length - 1].closest('.message-container');
+            if (lastAiMessage) {
+                addRegenerateButton(lastAiMessage);
+                addEditButton(lastAiMessage);
+            }
+        }
+    }
+
     // scrollToBottom();
 }
 
 // 添加消息到聊天区域
-function addMessageToChat(message, isRealtime = false) {
+function addMessageToChat(message) {
     const messageContainer = document.createElement('div');
     messageContainer.className = 'message-container';
 
@@ -472,31 +484,14 @@ function addMessageToChat(message, isRealtime = false) {
     messageContainer.appendChild(wrapper);
 
     elements.chatMessages.appendChild(messageContainer);
-    
+
     // 如果是AI消息且是测试用例场景，添加导出按钮
     if (!isUser && appState.currentScenario === 'testcase_generation') {
-        // 存储原始内容以便导出
         messageContainer.dataset.raw = message.content;
-        // addExportButton(messageContainer);
-        setTimeout(() => {
-            addExportButton(messageContainer);
-        }, 100);
+        addExportButton(messageContainer);
     }
-    
-    // 如果是AI的实时消息，使用打字机效果
-    if (!isUser && isRealtime) {
-        const contentElement = messageContainer.querySelector('.message-content');
-        typeWriterEffect(contentElement, message.content, () => {
-            scrollToBottom();
-            // 在实时消息完成后，添加导出按钮
-            if (appState.currentScenario === 'testcase_generation') {
-                messageContainer.dataset.raw = message.content;
-                addExportButton(messageContainer);
-            }
-        });
-    } else {
-        scrollToBottom();
-    }
+
+    scrollToBottom();
 }
 
 // 滚动到底部
@@ -752,6 +747,7 @@ async function sendMessage() {
         contentElement.appendChild(cursor);
 
         currentRequestController = new AbortController();
+        let lastRenderTime = 0;
 
         // 构建请求体，包含知识库ID
         // const requestBody = {
@@ -806,26 +802,16 @@ async function sendMessage() {
                         if (data.token) {
                             // 添加token到响应
                             aiResponse += data.token;
-                            
-                            // 渲染Markdown
-                            contentElement.innerHTML = DOMPurify.sanitize(marked.parse(aiResponse));
 
-                            smartScrollToBottom();
-                        }
-                        
-                        if (data.full_response) {
-                            aiResponse = data.full_response; // 更新为完整的响应
-                            // 将完整的响应存储在message容器上
-                            const currentMessageContainer = contentElement.closest('.message-container');
-                            if (currentMessageContainer) {
-                                currentMessageContainer.dataset.raw = aiResponse;
-                                // 检查是否是测试用例场景并且包含表格
-                                if (appState.currentScenario === 'testcase_generation' && hasMarkdownTable(aiResponse)) {
-                                    addExportButton(currentMessageContainer);
-                                }
+                            // 节流渲染：最多每120ms渲染一次，减少表格跳动
+                            const now = Date.now();
+                            if (now - lastRenderTime >= 120) {
+                                contentElement.innerHTML = DOMPurify.sanitize(marked.parse(aiResponse));
+                                smartScrollToBottom();
+                                lastRenderTime = now;
                             }
                         }
-
+                        
                         if (data.conversation_title) {
                             conversationTitle = data.conversation_title;
                         }
@@ -837,12 +823,17 @@ async function sendMessage() {
             }
         }
 
+        // 流结束后做一次最终渲染，确保最后一批 token 被显示
+        contentElement.innerHTML = DOMPurify.sanitize(marked.parse(aiResponse));
+        smartScrollToBottom();
 
                 // 确保添加导出按钮（如果未在流中处理）
         if (appState.currentScenario === 'testcase_generation') {
             aiMessageContainer.dataset.raw = aiResponse;
             addExportButton(aiMessageContainer);
         }
+        addRegenerateButton(aiMessageContainer);
+        addEditButton(aiMessageContainer);
 
         if (createdConversation || conversationTitle) {
             await refreshHistoryAndHighlightCurrentConversation();
@@ -905,14 +896,6 @@ function createTypingIndicator() {
 
     return container;
 }
-// 添加打字机效果
-function typeWriterEffect(messageElement, text, callback) {
-    messageElement.innerHTML = DOMPurify.sanitize(marked.parse(text));
-    if (callback) {
-        callback();
-    }
-}
-
 // 添加导出按钮的函数
 function addExportButton(messageContainer) {
     // const messageHeader = messageContainer.querySelector('.message-header');
@@ -924,7 +907,7 @@ function addExportButton(messageContainer) {
     // 创建导出按钮
     const exportBtn = document.createElement('button');
     exportBtn.className = 'export-btn';
-    exportBtn.innerHTML = '📥 导出';
+    exportBtn.innerHTML = '📥 导出用例';
     exportBtn.title = '导出测试用例';
     exportBtn.onclick = function(e) {
         e.stopPropagation();
@@ -933,6 +916,208 @@ function addExportButton(messageContainer) {
     
     // 将按钮添加到消息头部
     messageActions.appendChild(exportBtn);
+}
+
+// 添加重新生成按钮（仅在测试用例生成场景）
+function addRegenerateButton(messageContainer) {
+    if (appState.currentScenario !== 'testcase_generation') return;
+
+    const messageActions = messageContainer.querySelector('.message-actions');
+    if (!messageActions) return;
+
+    if (messageActions.querySelector('.regenerate-btn')) return;
+
+    const regenerateBtn = document.createElement('button');
+    regenerateBtn.className = 'regenerate-btn';
+    regenerateBtn.innerHTML = '🔄 重新生成';
+    regenerateBtn.title = '重新生成回复';
+    regenerateBtn.onclick = function(e) {
+        e.stopPropagation();
+        regenerateResponse(messageContainer);
+    };
+
+    messageActions.appendChild(regenerateBtn);
+}
+
+// 添加编辑问题按钮（仅在测试用例生成场景，显示在AI消息上）
+function addEditButton(messageContainer) {
+    if (appState.currentScenario !== 'testcase_generation') return;
+
+    const messageActions = messageContainer.querySelector('.message-actions');
+    if (!messageActions) return;
+
+    if (messageActions.querySelector('.edit-btn')) return;
+
+    const editBtn = document.createElement('button');
+    editBtn.className = 'edit-btn';
+    editBtn.innerHTML = '✏️ 编辑问题';
+    editBtn.title = '编辑问题后重新生成';
+    editBtn.onclick = function(e) {
+        e.stopPropagation();
+        enterEditMode(messageContainer);
+    };
+
+    messageActions.appendChild(editBtn);
+}
+
+// 进入编辑模式：定位到对应的用户消息并使其可编辑
+function enterEditMode(aiMessageContainer) {
+    // 找到对应的用户消息容器（前一个.message-container）
+    const userMessageContainer = aiMessageContainer.previousElementSibling;
+    if (!userMessageContainer || !userMessageContainer.querySelector('.user-message')) return;
+
+    const contentElement = userMessageContainer.querySelector('.message-content');
+    if (!contentElement) return;
+
+    const originalText = contentElement.textContent;
+
+    // 滚动到用户消息处
+    userMessageContainer.scrollIntoView({ behavior: 'smooth', block: 'center' });
+
+    // 替换为编辑区域
+    contentElement.innerHTML = `
+        <textarea class="edit-textarea">${escapeHtml(originalText)}</textarea>
+        <div class="edit-actions">
+            <button class="edit-cancel-btn">取消</button>
+            <button class="edit-submit-btn">重新生成</button>
+        </div>
+    `;
+
+    const textarea = contentElement.querySelector('.edit-textarea');
+    textarea.focus();
+    textarea.setSelectionRange(textarea.value.length, textarea.value.length);
+
+    // 取消按钮
+    contentElement.querySelector('.edit-cancel-btn').onclick = function() {
+        contentElement.textContent = originalText;
+    };
+
+    // 重新生成按钮
+    contentElement.querySelector('.edit-submit-btn').onclick = function() {
+        const newMessage = textarea.value.trim();
+        if (!newMessage) return;
+        contentElement.textContent = newMessage;
+        // 更新 dataset 以备导出
+        userMessageContainer.dataset.raw = newMessage;
+        // 调用重新生成，传入修改后的消息
+        regenerateResponse(aiMessageContainer, newMessage);
+    };
+}
+
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+
+// 重新生成响应
+async function regenerateResponse(messageContainer, editedMessage = null) {
+    if (appState.isProcessing) return;
+    if (!appState.currentConversation) return;
+
+    appState.isProcessing = true;
+    elements.chatInput.disabled = true;
+    elements.sendBtn.disabled = true;
+
+    // 中断之前的请求（如果有）
+    if (currentRequestController) {
+        currentRequestController.abort();
+    }
+    currentRequestController = new AbortController();
+
+    const contentElement = messageContainer.querySelector('.message-content');
+    const oldContent = contentElement.innerHTML;
+
+    // 显示加载状态
+    contentElement.innerHTML = '<div class="typing-indicator"><div class="typing-dot"></div><div class="typing-dot"></div><div class="typing-dot"></div></div>';
+
+    // 移除旧按钮
+    const exportBtn = messageContainer.querySelector('.export-btn');
+    if (exportBtn) exportBtn.remove();
+    const regenerateBtn = messageContainer.querySelector('.regenerate-btn');
+    if (regenerateBtn) regenerateBtn.remove();
+    const editBtn = messageContainer.querySelector('.edit-btn');
+    if (editBtn) editBtn.remove();
+
+    let lastRenderTime = 0;
+    let aiResponse = '';
+
+    try {
+        const requestBody = { conversation_id: appState.currentConversation };
+        if (editedMessage) {
+            requestBody.message = editedMessage;
+        }
+
+        const response = await fetch('/api/chat/regenerate', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(requestBody),
+            credentials: 'include',
+            signal: currentRequestController.signal,
+        });
+
+        if (!response.ok) {
+            throw new Error('重新生成请求失败');
+        }
+
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder('utf-8');
+
+        while (true) {
+            const { value, done } = await reader.read();
+            if (done) break;
+
+            const chunk = decoder.decode(value, { stream: true });
+            const events = chunk.split('\n\n').filter(event => event.trim() !== '');
+
+            for (const event of events) {
+                if (event.startsWith('data: ')) {
+                    const dataStr = event.replace('data: ', '').trim();
+                    if (dataStr === '[DONE]') break;
+
+                    try {
+                        const data = JSON.parse(dataStr);
+                        if (data.token) {
+                            aiResponse += data.token;
+                            const now = Date.now();
+                            if (now - lastRenderTime >= 120) {
+                                contentElement.innerHTML = DOMPurify.sanitize(marked.parse(aiResponse));
+                                smartScrollToBottom();
+                                lastRenderTime = now;
+                            }
+                        }
+                    } catch (e) {
+                        console.error('解析JSON失败:', e);
+                    }
+                }
+            }
+        }
+
+        // 最终渲染
+        contentElement.innerHTML = DOMPurify.sanitize(marked.parse(aiResponse));
+
+    } catch (error) {
+        if (error.name !== 'AbortError') {
+            console.error('重新生成失败:', error);
+            contentElement.innerHTML = oldContent;
+            alert('重新生成失败，请稍后再试');
+        }
+    } finally {
+        // 更新导出数据
+        messageContainer.dataset.raw = aiResponse || messageContainer.dataset.raw;
+
+        // 重新添加按钮
+        if (appState.currentScenario === 'testcase_generation') {
+            addExportButton(messageContainer);
+        }
+        addRegenerateButton(messageContainer);
+        addEditButton(messageContainer);
+
+        appState.isProcessing = false;
+        elements.chatInput.disabled = false;
+        elements.chatInput.focus();
+        currentRequestController = null;
+    }
 }
 
 // 导出测试用例的函数
@@ -966,12 +1151,6 @@ function exportTestCases(messageContainer) {
     document.body.removeChild(link);
 }
 
-function hasMarkdownTable(text) {
-    // 简单的Markdown表格检测
-    return text.includes('|') && text.includes('-') && 
-           text.split('\n').some(line => line.trim().startsWith('|'));
-}
-
 // 从Markdown文本中提取表格数据
 function extractTableFromMarkdown(text) {
     const lines = text.split('\n');
@@ -983,6 +1162,11 @@ function extractTableFromMarkdown(text) {
         if (line.startsWith('|') && line.endsWith('|')) {
             // 移除首尾的管道符，并分割单元格
             const cells = line.split('|').slice(1, -1).map(cell => cell.trim());
+            // 跳过分隔行（如 | --- | --- |）
+            if (cells.every(cell => /^:?-{3,}:?$/.test(cell))) {
+                inTable = true;
+                continue;
+            }
             tableData.push(cells);
             inTable = true;
         } else if (inTable) {

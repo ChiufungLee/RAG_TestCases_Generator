@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 
 from config import get_embedding_client, get_rag_db_path
 from models.database import get_db
-from services import knowlege_service
+from services import knowledge_service
 
 logger = logging.getLogger(__name__)
 
@@ -156,7 +156,7 @@ async def get_rag_retriever_by_kb(
                     logger.info("从缓存获取知识库 %s 的检索器", kb_id)
                     return _retriever_cache[cache_key]
 
-            kb = await knowlege_service.get_knowledge_base_by_id(db=db, kb_id=kb_id)
+            kb = await knowledge_service.get_knowledge_base_by_id(db=db, kb_id=kb_id)
             if not kb:
                 return None
         else:

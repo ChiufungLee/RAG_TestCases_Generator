@@ -3,17 +3,17 @@ import logging
 from fastapi import APIRouter, Depends, Form, Request, Response
 from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 from fastapi.templating import Jinja2Templates
-from langchain_core.messages import BaseMessage
+from langchain_core.messages import BaseMessage, HumanMessage
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from models.database import get_db
 from prompts.prompts import get_prompt, get_prompt_messages, get_scenario_temperature
-from services import knowlege_service
+from services import knowledge_service
 from services.auth_service import AuthService
 from services.chat_service import ChatService
 from utils.data_handle import convert_table_to_csv, extract_table_from_markdown
-from utils.llm_handle import generate_response
+from utils.llm_handle import generate_regenerate_response, generate_response
 from utils.retriever import get_rag_retriever_by_kb
 
 app = APIRouter()
@@ -39,7 +39,7 @@ async def _load_chat_context(message: str, knowledge_base_id: str | None, db: Se
     if not knowledge_base_id:
         return context, knowledge_base_name
 
-    knowledge_base = await knowlege_service.get_knowledge_base_by_id(kb_id=knowledge_base_id, db=db, user_id=user_id, allow_shared_read=True)
+    knowledge_base = await knowledge_service.get_knowledge_base_by_id(kb_id=knowledge_base_id, db=db, user_id=user_id, allow_shared_read=True)
     if not knowledge_base:
         return context, knowledge_base_name
 
@@ -163,9 +163,9 @@ async def chat_endpoint(
         return JSONResponse(status_code=404, content={"error": "对话不存在"})
 
     is_new_conversation = conversation.title == "新对话"
-    history_messages = await ChatService.get_conversation_history_messages(conversation_id, db)
+    history_limit = 7 if scenario == "testcase_generation" else 10
+    history_messages = await ChatService.get_conversation_history_messages(conversation_id, db, limit=history_limit)
 
-    await ChatService.create_new_message(conversation_id, "user", message, db)
     context, knowledge_base_name = await _load_chat_context(message, knowledge_base_id, db, user_id)
     use_knowledge_base = bool(knowledge_base_id)
     messages = _build_chat_messages(
@@ -248,3 +248,76 @@ async def export_testcases(
         "Content-Type": "text/csv",
     }
     return Response(content=csv_data, headers=headers)
+
+
+class RegenerateRequest(BaseModel):
+    conversation_id: str
+    message: str | None = None
+
+
+@app.post("/api/chat/regenerate")
+async def regenerate_endpoint(
+    request: Request,
+    data: RegenerateRequest,
+    db: Session = Depends(get_db),
+):
+    user_id = AuthService.get_optional_request_user_id(request)
+    if user_id is None:
+        return AuthService.unauthorized_json_response()
+
+    conversation_id = data.conversation_id.strip()
+    if not conversation_id:
+        return JSONResponse(status_code=400, content={"error": "缺少会话ID"})
+
+    conversation = await ChatService.get_conversation_info(conversation_id, db, user_id=user_id)
+    if not conversation:
+        return JSONResponse(status_code=404, content={"error": "对话不存在"})
+
+    last_user_msg = await ChatService.get_last_user_message(conversation_id, db)
+    if not last_user_msg:
+        return JSONResponse(status_code=400, content={"error": "没有可重新生成的消息"})
+
+    old_ai_msg = await ChatService.get_last_ai_message(conversation_id, db)
+    if not old_ai_msg:
+        return JSONResponse(status_code=400, content={"error": "没有可重新生成的AI回复"})
+
+    # 如果传入了编辑后的消息，更新用户消息内容
+    edited_message = (data.message or "").strip()
+    if edited_message:
+        last_user_msg.content = edited_message
+        db.commit()
+
+    message = last_user_msg.content
+    scenario = conversation.scenario
+    knowledge_base_id = conversation.knowledge_base_id
+
+    history_limit = 8 if scenario == "testcase_generation" else 11
+    history_messages = await ChatService.get_conversation_history_messages(conversation_id, db, limit=history_limit)
+    # 排除最后一轮用户消息（当前要重新回答的问题）
+    if history_messages and isinstance(history_messages[-1], HumanMessage):
+        history_messages = history_messages[:-1]
+
+    context, knowledge_base_name = await _load_chat_context(message, knowledge_base_id, db, user_id)
+    use_knowledge_base = bool(knowledge_base_id)
+    messages = _build_chat_messages(
+        scenario,
+        message,
+        history_messages,
+        knowledge_base_name,
+        context,
+        use_knowledge_base=use_knowledge_base,
+    )
+    prompt_scenario = scenario if use_knowledge_base else f"{scenario}_plain"
+    temperature = get_scenario_temperature(prompt_scenario)
+
+    return StreamingResponse(
+        generate_regenerate_response(
+            request,
+            messages,
+            conversation_id,
+            old_ai_msg.id,
+            db,
+            temperature=temperature,
+        ),
+        media_type="text/event-stream",
+    )

@@ -4,6 +4,7 @@ import json
 import logging
 from typing import AsyncGenerator, List, Union
 
+import httpx
 from langchain_core.messages import BaseMessage, HumanMessage, SystemMessage
 
 from config import get_deepseek_api_key
@@ -14,6 +15,7 @@ from sqlalchemy.orm import Session
 from langchain.chat_models import init_chat_model
 from models.chat import Conversation, Message
 from prompts.prompts import get_prompt, get_scenario_temperature
+from services.chat_service import ChatService
 
 logger = logging.getLogger(__name__)
 
@@ -28,7 +30,7 @@ def _get_cached_llm_model():
         model_provider="deepseek",
         api_key=api_key,
         temperature=0.7,
-        timeout=30,
+        timeout=httpx.Timeout(connect=10.0, read=120.0, write=30.0, pool=10.0),
         max_retries=2,
     )
     return model
@@ -42,8 +44,6 @@ def reset_llm_state():
 async def call_llm_model(prompt: Union[str, List[BaseMessage]], temperature: float | None = None) -> AsyncGenerator[str, None]:
     """异步调用LLM模型并流式返回token"""
     model = _get_cached_llm_model()
-    if temperature is not None:
-        model = model.bind(temperature=temperature)
     full_response = ""
 
     llm_input: Union[str, List[BaseMessage]]
@@ -52,8 +52,12 @@ async def call_llm_model(prompt: Union[str, List[BaseMessage]], temperature: flo
     else:
         llm_input = prompt
 
+    stream_kwargs = {}
+    if temperature is not None:
+        stream_kwargs["temperature"] = temperature
+
     try:
-        aiter = model.astream(llm_input).__aiter__()
+        aiter = model.astream(llm_input, **stream_kwargs).__aiter__()
         while True:
             try:
                 token = await asyncio.wait_for(aiter.__anext__(), timeout=180)
@@ -94,6 +98,7 @@ async def generate_response(request, prompt: Union[str, List[BaseMessage]], conv
         logger.info("AI响应结束，长度: %s", len(ai_response))
 
         if completed and ai_response and not full_response_saved:
+            await save_user_message(message, conversation_id, db)
             await save_ai_response(ai_response, conversation_id, db)
             full_response_saved = True
 
@@ -104,6 +109,62 @@ async def generate_response(request, prompt: Union[str, List[BaseMessage]], conv
 
         if completed:
             yield "data: [DONE]\n\n"
+
+
+async def generate_regenerate_response(
+    request,
+    prompt: Union[str, List[BaseMessage]],
+    conversation_id,
+    old_ai_message_id: int,
+    db,
+    temperature: float | None = None,
+):
+    """重新生成AI响应：流式输出完成后删除旧AI消息并保存新消息"""
+    ai_response = ""
+    full_response_saved = False
+    completed = False
+
+    try:
+        words = call_llm_model(prompt, temperature=temperature)
+        async for token in words:
+            if await request.is_disconnected():
+                logger.info("客户端已断开连接")
+                return
+
+            ai_response += token
+            yield f"data: {json.dumps({'token': token})}\n\n"
+        completed = True
+    except GeneratorExit:
+        logger.info("流式响应被中断")
+    finally:
+        logger.info("重新生成AI响应结束，长度: %s", len(ai_response))
+
+        if completed and ai_response and not full_response_saved:
+            await ChatService.delete_message(old_ai_message_id, db)
+            await save_ai_response(ai_response, conversation_id, db)
+            full_response_saved = True
+
+        if completed:
+            yield "data: [DONE]\n\n"
+
+
+async def save_user_message(content, conversation_id, db: Session):
+    """保存用户消息到数据库"""
+    if not content:
+        return
+
+    user_message = Message(
+        conversation_id=conversation_id,
+        role="user",
+        content=content,
+    )
+    db.add(user_message)
+    try:
+        db.commit()
+        logger.info("保存用户消息成功")
+    except Exception as e:
+        db.rollback()
+        logger.error("保存用户消息失败: %s", e, exc_info=True)
 
 
 async def save_ai_response(content, conversation_id, db: Session):
@@ -147,12 +208,12 @@ async def generate_and_update_title(user_message: str, conversation_id: str, db:
         title_system = get_prompt(scenario="title_generation", question=user_message)
         title_temperature = get_scenario_temperature("title_generation")
         model = _get_cached_llm_model()
-        model = model.bind(temperature=title_temperature, max_tokens=50)
 
-        response = await model.ainvoke([
-            SystemMessage(content=title_system),
-            HumanMessage(content=user_message),
-        ])
+        response = await model.ainvoke(
+            [SystemMessage(content=title_system), HumanMessage(content=user_message)],
+            temperature=title_temperature,
+            max_tokens=50,
+        )
         title_str = response.content
 
         import re
