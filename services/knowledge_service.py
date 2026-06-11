@@ -23,12 +23,11 @@ ALLOWED_UPLOAD_EXTENSIONS = {".pdf"}
 
 
 def _refresh_kb_file_count(db, kb_id: str) -> int:
-    db.flush()
     new_count = db.query(KnowledgeFile).filter(KnowledgeFile.knowledge_base_id == kb_id).count()
-    kb = db.query(KnowledgeBase).filter(KnowledgeBase.id == kb_id).first()
-    if kb:
-        kb.file_count = new_count
-        kb.updated_at = datetime.now()
+    db.query(KnowledgeBase).filter(KnowledgeBase.id == kb_id).update({
+        "file_count": new_count,
+        "updated_at": datetime.now(),
+    })
     return new_count
 
 

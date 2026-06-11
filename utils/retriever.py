@@ -4,12 +4,10 @@ from threading import Lock
 from typing import Any, Dict, List
 
 import chromadb
-from fastapi import Depends
 from langchain_core.documents import Document
 from sqlalchemy.orm import Session
 
 from config import get_embedding_client, get_rag_db_path
-from models.database import get_db
 from services import knowledge_service
 
 logger = logging.getLogger(__name__)
@@ -123,9 +121,6 @@ _retriever_lock = Lock()
 _retriever_cache = {}
 
 
-def _build_kb_cache_key(kb_id: str) -> str:
-    return kb_id
-
 
 @functools.lru_cache(maxsize=2)
 def _get_cached_chroma_client():
@@ -135,39 +130,29 @@ def _get_cached_chroma_client():
 
 
 
-def reset_retriever_state():
-    with _retriever_lock:
-        _retriever_cache.clear()
-    _get_cached_chroma_client.cache_clear()
-    get_embedding_client.cache_clear()
 
 
+async def get_rag_retriever_by_kb(kb_or_id, db: Session):
+    # Step 1: normalize to kb_id, resolve KB object if needed
+    if isinstance(kb_or_id, str):
+        kb_id = kb_or_id
+    else:
+        kb = kb_or_id
+        kb_id = kb.id
 
-async def get_rag_retriever_by_kb(
-    kb_or_id,
-    db: Session = Depends(get_db),
-):
+    # Step 2: fast path — check cache without lock
+    if kb_id in _retriever_cache:
+        logger.info("从缓存获取知识库 %s 的检索器", kb_id)
+        return _retriever_cache[kb_id]
+
+    # Step 3: load KB object (avoids duplicate DB query in string branch)
+    if isinstance(kb_or_id, str):
+        kb = await knowledge_service.get_knowledge_base_by_id(db=db, kb_id=kb_id)
+        if not kb:
+            return None
+
     try:
-        if isinstance(kb_or_id, str):
-            kb_id = kb_or_id
-            cache_key = _build_kb_cache_key(kb_id)
-            with _retriever_lock:
-                if cache_key in _retriever_cache:
-                    logger.info("从缓存获取知识库 %s 的检索器", kb_id)
-                    return _retriever_cache[cache_key]
-
-            kb = await knowledge_service.get_knowledge_base_by_id(db=db, kb_id=kb_id)
-            if not kb:
-                return None
-        else:
-            kb = kb_or_id
-            kb_id = kb.id
-            cache_key = _build_kb_cache_key(kb_id)
-            with _retriever_lock:
-                if cache_key in _retriever_cache:
-                    logger.info("从缓存获取知识库 %s 的检索器", kb_id)
-                    return _retriever_cache[cache_key]
-
+        # Step 4: create retriever
         chroma_client = _get_cached_chroma_client()
 
         try:
@@ -183,8 +168,12 @@ async def get_rag_retriever_by_kb(
             model_name="text-embedding-v4",
         )
 
+        # Step 5: store in cache with double-check under lock
         with _retriever_lock:
-            _retriever_cache[cache_key] = retriever
+            if kb_id in _retriever_cache:
+                logger.info("检索器已被并发请求缓存，使用已有实例")
+                return _retriever_cache[kb_id]
+            _retriever_cache[kb_id] = retriever
 
         logger.info("已为知识库 %s 创建检索器，集合名称: %s", kb_id, kb.collection_name)
         return retriever

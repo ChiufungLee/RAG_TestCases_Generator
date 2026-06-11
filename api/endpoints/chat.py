@@ -21,15 +21,16 @@ templates = Jinja2Templates(directory="templates")
 logger = logging.getLogger(__name__)
 
 
-def _build_chat_messages(scenario, message, history_messages, knowledge_base_name, context, use_knowledge_base: bool) -> list[BaseMessage]:
+def _build_chat_messages(scenario, message, history_messages, knowledge_base_name, context, use_knowledge_base: bool) -> tuple[list[BaseMessage], str]:
     prompt_scenario = scenario if use_knowledge_base else f"{scenario}_plain"
-    return get_prompt_messages(
+    messages = get_prompt_messages(
         prompt_scenario,
         history_messages=history_messages,
         context=context,
         question=message,
         knowledge_base_name=knowledge_base_name,
     )
+    return messages, prompt_scenario
 
 
 async def _load_chat_context(message: str, knowledge_base_id: str | None, db: Session, user_id: int):
@@ -44,7 +45,7 @@ async def _load_chat_context(message: str, knowledge_base_id: str | None, db: Se
         return context, knowledge_base_name
 
     knowledge_base_name = knowledge_base.name
-    retriever = await get_rag_retriever_by_kb(knowledge_base)
+    retriever = await get_rag_retriever_by_kb(knowledge_base, db)
     if retriever:
         try:
             docs = await retriever.get_relevant_documents(message)
@@ -168,7 +169,7 @@ async def chat_endpoint(
 
     context, knowledge_base_name = await _load_chat_context(message, knowledge_base_id, db, user_id)
     use_knowledge_base = bool(knowledge_base_id)
-    messages = _build_chat_messages(
+    messages, prompt_scenario = _build_chat_messages(
         scenario,
         message,
         history_messages,
@@ -176,10 +177,9 @@ async def chat_endpoint(
         context,
         use_knowledge_base=use_knowledge_base,
     )
-    prompt_scenario = scenario if use_knowledge_base else f"{scenario}_plain"
     temperature = get_scenario_temperature(prompt_scenario)
     return StreamingResponse(
-        generate_response(request, messages, conversation_id, is_new_conversation, message, db, temperature=temperature),
+        generate_response(request, messages, conversation, is_new_conversation, message, db, temperature=temperature),
         media_type="text/event-stream",
     )
 
@@ -299,7 +299,7 @@ async def regenerate_endpoint(
 
     context, knowledge_base_name = await _load_chat_context(message, knowledge_base_id, db, user_id)
     use_knowledge_base = bool(knowledge_base_id)
-    messages = _build_chat_messages(
+    messages, prompt_scenario = _build_chat_messages(
         scenario,
         message,
         history_messages,
@@ -307,14 +307,13 @@ async def regenerate_endpoint(
         context,
         use_knowledge_base=use_knowledge_base,
     )
-    prompt_scenario = scenario if use_knowledge_base else f"{scenario}_plain"
     temperature = get_scenario_temperature(prompt_scenario)
 
     return StreamingResponse(
         generate_regenerate_response(
             request,
             messages,
-            conversation_id,
+            conversation,
             old_ai_msg.id,
             db,
             temperature=temperature,

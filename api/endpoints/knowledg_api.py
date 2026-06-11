@@ -8,6 +8,7 @@ from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 
 from models.database import get_db
+from models.knowledge_models import KnowledgeFile
 from schemas.knowledge_schemas import KnowledgeBaseCreate, KnowledgeBaseResponse, KnowledgeBaseUpdate
 from services import knowledge_service
 from services.auth_service import AuthService
@@ -129,8 +130,11 @@ async def delete_file(
     if not kb:
         raise HTTPException(status_code=404, detail="知识库不存在")
 
-    file_record = await knowledge_service.get_knowledge_file(db, file_id=file_id, user_id=user_id)
-    if not file_record or file_record.knowledge_base_id != kb_id:
+    file_record = db.query(KnowledgeFile).filter(
+        KnowledgeFile.id == file_id,
+        KnowledgeFile.knowledge_base_id == kb_id,
+    ).first()
+    if not file_record:
         raise HTTPException(status_code=404, detail="文件不存在")
 
     await knowledge_service.delete_knowledge_file(db, kb, file_record)

@@ -2,6 +2,7 @@ import asyncio
 import functools
 import json
 import logging
+import re
 from typing import AsyncGenerator, List, Union
 
 import httpx
@@ -36,9 +37,6 @@ def _get_cached_llm_model():
     return model
 
 
-
-def reset_llm_state():
-    _get_cached_llm_model.cache_clear()
 
 
 async def call_llm_model(prompt: Union[str, List[BaseMessage]], temperature: float | None = None) -> AsyncGenerator[str, None]:
@@ -77,7 +75,7 @@ async def call_llm_model(prompt: Union[str, List[BaseMessage]], temperature: flo
             logger.debug("完整响应长度: %s", len(full_response))
 
 
-async def generate_response(request, prompt: Union[str, List[BaseMessage]], conversation_id, is_new_conversation, message, db, temperature: float | None = None):
+async def generate_response(request, prompt: Union[str, List[BaseMessage]], conversation, is_new_conversation, message, db, temperature: float | None = None):
     ai_response = ""
     full_response_saved = False
     completed = False
@@ -98,12 +96,12 @@ async def generate_response(request, prompt: Union[str, List[BaseMessage]], conv
         logger.info("AI响应结束，长度: %s", len(ai_response))
 
         if completed and ai_response and not full_response_saved:
-            await save_user_message(message, conversation_id, db)
-            await save_ai_response(ai_response, conversation_id, db)
+            await save_user_message(message, conversation.id, db)
+            await save_ai_response(ai_response, conversation, db)
             full_response_saved = True
 
         if completed and is_new_conversation:
-            conversation_title = await generate_and_update_title(message, conversation_id, db)
+            conversation_title = await generate_and_update_title(message, conversation.id, db)
             if conversation_title:
                 yield f"data: {json.dumps({'conversation_title': conversation_title})}\n\n"
 
@@ -114,7 +112,7 @@ async def generate_response(request, prompt: Union[str, List[BaseMessage]], conv
 async def generate_regenerate_response(
     request,
     prompt: Union[str, List[BaseMessage]],
-    conversation_id,
+    conversation,
     old_ai_message_id: int,
     db,
     temperature: float | None = None,
@@ -141,7 +139,7 @@ async def generate_regenerate_response(
 
         if completed and ai_response and not full_response_saved:
             await ChatService.delete_message(old_ai_message_id, db)
-            await save_ai_response(ai_response, conversation_id, db)
+            await save_ai_response(ai_response, conversation, db)
             full_response_saved = True
 
         if completed:
@@ -167,13 +165,13 @@ async def save_user_message(content, conversation_id, db: Session):
         logger.error("保存用户消息失败: %s", e, exc_info=True)
 
 
-async def save_ai_response(content, conversation_id, db: Session):
+async def save_ai_response(content, conversation, db: Session):
     """保存AI响应到数据库"""
     if not content:
         return
 
     ai_message = Message(
-        conversation_id=conversation_id,
+        conversation_id=conversation.id,
         role="assistant",
         content=content,
     )
@@ -186,21 +184,15 @@ async def save_ai_response(content, conversation_id, db: Session):
         logger.error("保存消息失败: %s", e, exc_info=True)
         return
 
-    conversation = db.query(Conversation).filter(Conversation.id == conversation_id).first()
-    if conversation:
-        conversation.updated_at = func.now()
-        try:
-            db.commit()
-        except Exception:
-            db.rollback()
+    conversation.updated_at = func.now()
+    try:
+        db.commit()
+    except Exception:
+        db.rollback()
 
 
 async def generate_and_update_title(user_message: str, conversation_id: str, db: Session):
     """异步生成并更新对话标题"""
-    conversation = db.query(Conversation).filter(Conversation.id == conversation_id).first()
-    if not conversation:
-        logger.warning("未找到对话，无法生成标题: %s", conversation_id)
-        return None
 
     fallback_title = (user_message[:20] + "...") if len(user_message) > 20 else user_message
 
@@ -216,21 +208,21 @@ async def generate_and_update_title(user_message: str, conversation_id: str, db:
         )
         title_str = response.content
 
-        import re
-
         title = re.sub(r"[^a-zA-Z0-9\u4e00-\u9fa5\s]", "", title_str).strip() or fallback_title
 
         if len(title) > 30:
             title = title[:30] + "..."
 
-        conversation.title = title
-        db.add(conversation)
-        db.commit()
-        db.refresh(conversation)
+        conversation = db.query(Conversation).filter(Conversation.id == conversation_id).first()
+        if conversation:
+            conversation.title = title
+            db.commit()
+            db.refresh(conversation)
         return title
     except Exception as e:
         logger.error("生成标题失败: %s", e, exc_info=True)
-        conversation.title = fallback_title
-        db.add(conversation)
-        db.commit()
+        conversation = db.query(Conversation).filter(Conversation.id == conversation_id).first()
+        if conversation:
+            conversation.title = fallback_title
+            db.commit()
         return fallback_title

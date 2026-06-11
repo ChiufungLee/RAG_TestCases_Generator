@@ -20,7 +20,12 @@ class ChatService:
             filter_condition.append(Conversation.knowledge_base_id == knowledge_base_id)
         else:
             filter_condition.append(Conversation.knowledge_base_id.is_(None))
-        conversations = db.query(Conversation).filter(*filter_condition).order_by(desc(Conversation.updated_at)).all()
+        rows = (
+            db.query(Conversation.id, Conversation.title, Conversation.updated_at)
+            .filter(*filter_condition)
+            .order_by(desc(Conversation.updated_at))
+            .all()
+        )
 
         groups = []
         today_group = {"time_group": "今日", "conversations": []}
@@ -28,12 +33,12 @@ class ChatService:
         week_group = {"time_group": "最近7天", "conversations": []}
         older_group = {"time_group": "更早", "conversations": []}
 
-        for conv in conversations:
-            conv_date = conv.updated_at.date()
+        for conv_id, title, updated_at in rows:
+            conv_date = updated_at.date()
             conv_data = {
-                "id": conv.id,
-                "title": conv.title,
-                "updated_at": conv.updated_at.isoformat(),
+                "id": conv_id,
+                "title": title,
+                "updated_at": updated_at.isoformat(),
             }
 
             if conv_date == today:
@@ -108,6 +113,7 @@ class ChatService:
         db.refresh(message)
         return message
 
+    # 当前未使用，保留供后续需要将历史格式化为字符串的场景（如 history_summary）
     @staticmethod
     async def get_conversation_history(conversation_id: str, db: Session, limit: int = 7) -> str:
         messages = (

@@ -133,10 +133,7 @@ class AuthService:
 
     @staticmethod
     def get_optional_request_user_id(request: Request) -> Optional[int]:
-        try:
-            return AuthService.require_request_user_id(request)
-        except HTTPException:
-            return None
+        return request.session.get("user_id")
 
     @staticmethod
     def unauthorized_json_response() -> JSONResponse:

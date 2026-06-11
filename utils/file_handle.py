@@ -31,11 +31,6 @@ def get_chromadb_client():
     return chromadb.PersistentClient(path=get_rag_db_path())
 
 
-def reset_document_processor_state():
-    get_embedding_client.cache_clear()
-    get_chromadb_client.cache_clear()
-    get_document_processor.cache_clear()
-
 
 class DocumentProcessor:
     @property
@@ -47,7 +42,7 @@ class DocumentProcessor:
         return get_chromadb_client()
 
     def embed(self, text: str) -> List[float]:
-        """生成文本的嵌入向量"""
+        """生成单条文本的嵌入向量"""
         try:
             response = self.client.embeddings.create(
                 model="text-embedding-v4",
@@ -59,6 +54,24 @@ class DocumentProcessor:
         except Exception as e:
             logger.error("Embedding生成失败: %s", e, exc_info=True)
             return []
+
+    def embed_batch(self, texts: List[str], batch_size: int = 10) -> List[List[float]]:
+        """批量生成嵌入向量，text-embedding-v4 支持多输入"""
+        vectors = []
+        for i in range(0, len(texts), batch_size):
+            batch = texts[i : i + batch_size]
+            try:
+                response = self.client.embeddings.create(
+                    model="text-embedding-v4",
+                    input=batch,
+                    dimensions=1024,
+                    encoding_format="float",
+                )
+                vectors.extend([item.embedding for item in response.data])
+            except Exception as e:
+                logger.error("批量Embedding失败 (batch %d-%d): %s", i, i + len(batch), e, exc_info=True)
+                vectors.extend([[]] * len(batch))
+        return vectors
 
     def load_pdf(self, file_path: str) -> List[Document]:
         """使用 unstructured 加载 PDF 并按文档结构分块"""
@@ -213,40 +226,58 @@ class DocumentProcessor:
         collection_name: str,
         file_metadata: Optional[dict] = None,
     ) -> int:
-        """保存文档分片到ChromaDB"""
+        """保存文档分片到ChromaDB（批量 embedding + 单次写入）"""
         try:
             collection = self.chromadb_client.get_or_create_collection(name=collection_name)
             logger.info("save_to_chroma: 收到 %d 个分片", len(splits))
 
-            chunk_count = 0
-            embed_fail = 0
+            # 收集有效分片
+            ids = []
+            documents = []
+            metadatas = []
             for split in splits:
                 if not split.page_content.strip():
                     continue
-
                 doc_id = f"{collection_name}_{uuid.uuid4().hex}"
-
                 metadata = split.metadata.copy() if split.metadata else {}
                 if file_metadata:
                     metadata.update(file_metadata)
+                ids.append(doc_id)
+                documents.append(split.page_content)
+                metadatas.append(metadata)
 
-                vector = self.embed(split.page_content)
-                if not vector:
-                    embed_fail += 1
-                    continue
+            if not documents:
+                logger.warning("save_to_chroma: 无有效分片")
+                return 0
 
-                collection.add(
-                    ids=[doc_id],
-                    documents=[split.page_content],
-                    embeddings=[vector],
-                    metadatas=[metadata],
-                )
-                chunk_count += 1
+            # 批量生成 embeddings
+            vectors = self.embed_batch(documents)
 
+            # 过滤 embedding 失败的分片
+            valid_ids, valid_docs, valid_vectors, valid_metadatas = [], [], [], []
+            for doc_id, doc, vec, meta in zip(ids, documents, vectors, metadatas):
+                if vec:
+                    valid_ids.append(doc_id)
+                    valid_docs.append(doc)
+                    valid_vectors.append(vec)
+                    valid_metadatas.append(meta)
+
+            embed_fail = len(documents) - len(valid_docs)
             if embed_fail > 0:
                 logger.warning("save_to_chroma: %d 个分片 embedding 失败被跳过", embed_fail)
-            logger.info("成功保存 %d 个分片到集合 %s", chunk_count, collection_name)
-            return chunk_count
+
+            if not valid_ids:
+                return 0
+
+            # 单次批量写入 ChromaDB
+            collection.add(
+                ids=valid_ids,
+                documents=valid_docs,
+                embeddings=valid_vectors,
+                metadatas=valid_metadatas,
+            )
+            logger.info("成功保存 %d 个分片到集合 %s", len(valid_ids), collection_name)
+            return len(valid_ids)
 
         except Exception as e:
             logger.error("保存到ChromaDB失败: %s", e, exc_info=True)
