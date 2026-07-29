@@ -20,7 +20,6 @@ app = APIRouter()
 templates = Jinja2Templates(directory="templates")
 logger = logging.getLogger(__name__)
 
-
 def _build_chat_messages(scenario, message, history_messages, knowledge_base_name, context, use_knowledge_base: bool) -> tuple[list[BaseMessage], str]:
     prompt_scenario = scenario if use_knowledge_base else f"{scenario}_plain"
     messages = get_prompt_messages(

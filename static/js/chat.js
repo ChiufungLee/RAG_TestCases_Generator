@@ -528,13 +528,9 @@ function setupEventListeners() {
             item.classList.add('active');
             
             // 更新当前场景
-            // appState.currentScenario = item.dataset.scenario;
             const newScenario = item.dataset.scenario;
             appState.currentScenario = newScenario;
-            
-            // 加载新场景的历史记录
-            // loadHistory(appState.currentScenario);
-            
+
             // 重置当前对话
             appState.currentConversation = null;
             // elements.chatTitle.textContent = "有问题就会有答案";
@@ -643,7 +639,7 @@ async function sendMessage() {
 
     const message = elements.chatInput.value.trim();
     if (!message || appState.isProcessing) return;
-    
+
     // 禁用输入和发送按钮
     appState.isProcessing = true;
     elements.chatInput.disabled = true;
