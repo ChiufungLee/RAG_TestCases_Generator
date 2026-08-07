@@ -557,37 +557,16 @@ function setupEventListeners() {
     });
     
     elements.newChatBtn.addEventListener('click', async () => {
-        try {
-            // 创建新对话
-            const formData = new FormData();
-            formData.append('scenario', appState.currentScenario);
-            if (appState.currentKnowledgeBaseId) {
-                formData.append('knowledge_base_id', appState.currentKnowledgeBaseId);
-            }
-            console.log(formData)
-            const response = await fetch('/api/conversation/new', {
-                method: 'POST',
-                credentials: 'include',
-                body: formData
-            });
-            
-            if (response.ok) {
-                const data = await response.json();
-                appState.currentConversation = data.conversation_id;
+        // 仅清空聊天区域，不在数据库创建对话记录
+        // 对话记录会在用户实际发送第一条消息时由 sendMessage() 懒创建
+        appState.currentConversation = null;
+        elements.chatMessages.innerHTML = tipsText;
 
-            elements.chatMessages.innerHTML = tipsText
-
-                await refreshHistoryAndHighlightCurrentConversation();
-            } else {
-                throw new Error('创建新对话失败');
-            }
-        } catch (error) {
-            console.error('创建新对话时出错:', error);
-            // 如果创建失败，保持当前对话为null，但用户输入时仍会创建新对话
-            appState.currentConversation = null;
-            alert('创建新对话失败，请稍后再试');
-        }
-
+        // 刷新历史列表以移除旧对话的高亮状态
+        await loadHistory(appState.currentScenario, appState.currentKnowledgeBaseId);
+        document.querySelectorAll('.conversation-item').forEach(item => {
+            item.classList.remove('active');
+        });
     });
 
     const mobileMenuBtn = document.getElementById('mobileMenuBtn');
