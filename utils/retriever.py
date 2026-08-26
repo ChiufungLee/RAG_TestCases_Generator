@@ -7,7 +7,12 @@ import chromadb
 from langchain_core.documents import Document
 from sqlalchemy.orm import Session
 
-from config import get_embedding_client, get_rag_db_path
+from config import (
+    get_embedding_client, 
+    get_embedding_config, 
+    get_retriever_config,
+    get_rag_db_path, 
+)
 from services import knowledge_service
 
 logger = logging.getLogger(__name__)
@@ -18,24 +23,22 @@ class ChromaRetriever:
         self,
         collection_name: str,
         chroma_client: chromadb.Client,
-        model_name: str = "text-embedding-v4",
-        embedding_dimensions: int = 1024,
-        encoding_format: str = "float",
     ):
         self.collection_name = collection_name
         self.chroma_client = chroma_client
-        self.model_name = model_name
-        self.embedding_dimensions = embedding_dimensions
-        self.encoding_format = encoding_format
+        self.embedding_config = get_embedding_config()
         self.openai_client = get_embedding_client()
+        self.retriever_config = get_retriever_config()
         self.collection = self.chroma_client.get_collection(name=collection_name)
 
     async def embed(self, text: str) -> List[float]:
+        config = self.embedding_config
+
         response = self.openai_client.embeddings.create(
-            model=self.model_name,
+            model=config.model,
             input=text,
-            dimensions=self.embedding_dimensions,
-            encoding_format=self.encoding_format,
+            dimensions=config.dimensions,
+            encoding_format=config.encoding_format,
         )
         logger.debug("embedding token 使用量: %s", response.usage.total_tokens)
         return response.data[0].embedding
@@ -43,8 +46,8 @@ class ChromaRetriever:
     async def get_relevant_documents(
         self,
         query: str,
-        n_results: int = 5,
-        distance_threshold: float = 1.2,
+        n_results: int | None = None,
+
     ) -> List[Document]:
         """从ChromaDB中检索与查询相关的文档。
 
@@ -54,14 +57,27 @@ class ChromaRetriever:
         Args:
             query: 用户查询文本。
             n_results: 最终返回的最大文档数量，默认3。
-            distance_threshold: L2距离阈值，超过此值的结果被视为不相关而被过滤。
-                ChromaDB默认使用L2距离（值越小越相关），同主题文档通常在0.3-0.8之间，
-                超过1.2基本不相关。可根据实际检索效果调整。
         """
+
+        config = self.retriever_config
+
+        if n_results is None:
+            n_results = config.top_k
+
+        candidate_k = max(
+            config.candidate_k,
+            n_results,
+        )
+
+        candidate_k = min(
+            candidate_k,
+            self.collection.count() or candidate_k,
+        )
+
         query_vector = await self.embed(query)
         results = self.collection.query(
             query_embeddings=[query_vector],
-            n_results=min(n_results * 2, self.collection.count() or n_results * 2),
+            n_results=candidate_k,
             include=["documents", "metadatas", "distances"],
         )
 
@@ -74,9 +90,18 @@ class ChromaRetriever:
             distance_list = distance_groups[group_index] if group_index < len(distance_groups) else []
             for item_index, text in enumerate(doc_list):
                 distance = distance_list[item_index] if item_index < len(distance_list) else float("inf")
-                if distance > distance_threshold:
-                    logger.debug("过滤低相关文档: distance=%.4f > threshold=%.4f", distance, distance_threshold)
+                if (
+                    config.enable_distance_filter
+                    and config.distance_threshold is not None
+                    and distance > config.distance_threshold
+                ):
+                    logger.debug(
+                        "过滤低相关文档: distance=%.4f > threshold=%.4f",
+                        distance,
+                        config.distance_threshold,
+                    )
                     continue
+
                 metadata = metadata_list[item_index] if item_index < len(metadata_list) else {}
                 documents.append(Document(page_content=text, metadata=metadata or {}))
                 if len(documents) >= n_results:
@@ -84,7 +109,20 @@ class ChromaRetriever:
             if len(documents) >= n_results:
                 break
 
-        logger.info("检索结果: 请求%d个, 阈值过滤后%d个 (threshold=%.2f)", n_results, len(documents), distance_threshold)
+        if config.enable_distance_filter:
+            logger.info(
+                "检索结果: 请求%d个, 返回%d个, distance_threshold=%s",
+                n_results,
+                len(documents),
+                config.distance_threshold,
+            )
+        else:
+            logger.info(
+                "检索结果: 请求%d个, 返回%d个, distance_filter=disabled",
+                n_results,
+                len(documents),
+            )
+
         return documents
 
     async def query(
@@ -165,7 +203,6 @@ async def get_rag_retriever_by_kb(kb_or_id, db: Session):
         retriever = ChromaRetriever(
             collection_name=kb.collection_name,
             chroma_client=chroma_client,
-            model_name="text-embedding-v4",
         )
 
         # Step 5: store in cache with double-check under lock
