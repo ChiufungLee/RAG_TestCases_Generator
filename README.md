@@ -21,8 +21,10 @@
 
 ## 使用的模型
 
-- Embedding：阿里百炼 `text-embedding-v4`
-- LLM：DeepSeek `deepseek-chat`
+- LLM：由 `LLM_*` 配置决定，当前示例使用 DeepSeek `deepseek-v4-flash`
+- Embedding：由 `EMBEDDING_*` 配置决定，当前示例使用阿里百炼 `text-embedding-v4`
+
+LLM 和 Embedding 使用独立的配置、凭证和模型参数。文档入库与查询检索必须使用同一套 Embedding 模型和向量维度；如果修改 `EMBEDDING_MODEL` 或 `EMBEDDING_DIMENSIONS`，需要评估并重建已有 Chroma 向量集合。
 
 ## 本地开发
 
@@ -49,10 +51,35 @@ MYSQL_HOST=localhost
 MYSQL_PORT=3306
 MYSQL_DATABASE=aitest_rag
 
-# 模型配置
-DEEPSEEK_API_KEY=your_deepseek_api_key
-ALIYUN_API_KEY=your_aliyun_api_key
-ALIYUN_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
+# LLM 配置
+LLM_PROVIDER=deepseek
+LLM_MODEL=deepseek-v4-flash
+LLM_API_KEY=your_llm_api_key
+LLM_BASE_URL=https://api.deepseek.com
+LLM_TEMPERATURE=0.7
+LLM_MAX_TOKENS=4096
+LLM_TIMEOUT_CONNECT=10
+LLM_TIMEOUT_READ=120
+LLM_TIMEOUT_WRITE=30
+LLM_TIMEOUT_POOL=10
+LLM_MAX_RETRIES=2
+
+# Embedding 配置
+EMBEDDING_PROVIDER=openai
+EMBEDDING_MODEL=text-embedding-v4
+EMBEDDING_API_KEY=your_embedding_api_key
+EMBEDDING_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
+EMBEDDING_DIMENSIONS=1024
+EMBEDDING_ENCODING_FORMAT=float
+
+# Chroma 配置
+CHROMA_DISTANCE_METRIC=l2
+
+# Retriever 配置
+RETRIEVER_TOP_K=5
+RETRIEVER_CANDIDATE_K=10
+RETRIEVER_ENABLE_DISTANCE_FILTER=false
+RETRIEVER_DISTANCE_THRESHOLD=
 
 # 存储路径
 RAG_DB_PATH=./chroma_db/local_rag_db
@@ -65,6 +92,12 @@ TEMP_UPLOAD_DIR=./temp_uploads
 - 开发环境下，如果未设置 `DATABASE_URL`，应用会回退到 MySQL 配置拼接连接串。
 - 生产环境下必须显式配置 `SESSION_SECRET_KEY`。
 - 生产环境下如果未设置 `DATABASE_URL`，则 `MYSQL_PASSWORD` 不能保留默认值 `password`。
+- `LLM_MAX_TOKENS` 会传递给 LangChain ChatModel，限制 LLM 的最大输出 token 数；标题生成会单独使用 50 个 token。
+- `LLM_TIMEOUT_*` 的单位是秒，分别控制连接、读取、写入和连接池超时；`LLM_MAX_RETRIES` 控制 LLM 请求重试次数。
+- `EMBEDDING_DIMENSIONS` 必须与已写入 Chroma 集合的向量维度一致。
+- `RETRIEVER_TOP_K` 是最终返回的文档数量，`RETRIEVER_CANDIDATE_K` 是初始召回数量。
+- `RETRIEVER_ENABLE_DISTANCE_FILTER` 为 `true` 且设置了 `RETRIEVER_DISTANCE_THRESHOLD` 时，才会启用距离阈值过滤。
+- 模型配置优先使用上述 `LLM_*` 和 `EMBEDDING_*` 变量；旧版 `DEEPSEEK_API_KEY`、`ALIYUN_API_KEY` 和 `ALIYUN_BASE_URL` 可作为 API 凭证和地址的兼容回退配置。
 
 ### 3. 启动应用
 
