@@ -8,7 +8,7 @@ from typing import AsyncGenerator, List, Union
 import httpx
 from langchain_core.messages import BaseMessage, HumanMessage, SystemMessage
 
-from config import get_deepseek_api_key
+from config import get_llm_config
 
 from sqlalchemy import func
 from sqlalchemy.orm import Session
@@ -24,16 +24,28 @@ logger = logging.getLogger(__name__)
 @functools.lru_cache(maxsize=1)
 def _get_cached_llm_model():
     """初始化并缓存大语言模型实例"""
-    api_key = get_deepseek_api_key()
+    # api_key = get_deepseek_api_key()
+
+    config = get_llm_config()
+
+    timeout = httpx.Timeout(
+        connect=config.timeout_connect,
+        read=config.timeout_read,
+        write=config.timeout_write,
+        pool=config.timeout_pool,
+    )
 
     model = init_chat_model(
-        model="deepseek-chat",
-        model_provider="deepseek",
-        api_key=api_key,
-        temperature=0.7,
-        timeout=httpx.Timeout(connect=10.0, read=120.0, write=30.0, pool=10.0),
-        max_retries=2,
+        model=config.model,
+        model_provider=config.provider,
+        api_key=config.api_key,
+        base_url=config.base_url,
+        temperature=config.temperature,
+        max_tokens=config.max_tokens,
+        timeout=timeout,
+        max_retries=config.max_retries,
     )
+
     return model
 
 
