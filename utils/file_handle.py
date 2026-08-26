@@ -11,13 +11,13 @@ from unstructured.chunking.title import chunk_by_title
 from unstructured.partition.pdf import partition_pdf
 
 from config import (
+    get_chroma_config,
     get_embedding_client,
+    get_embedding_config, 
     get_rag_db_path,
     get_temp_upload_dir,
     get_upload_dir,
 )
-
-from config import get_embedding_config
 
 logger = logging.getLogger(__name__)
 
@@ -40,13 +40,17 @@ class DocumentProcessor:
         return get_embedding_client()
 
     @property
+    def embedding_config(self):
+        return get_embedding_config()
+    
+    @property
     def chromadb_client(self):
         return get_chromadb_client()
 
     def embed(self, text: str) -> List[float]:
         """生成单条文本的嵌入向量"""
         try:
-            config = get_embedding_config()
+            config = self.embedding_config
 
             response = self.client.embeddings.create(
                 model=config.model,
@@ -65,7 +69,7 @@ class DocumentProcessor:
         for i in range(0, len(texts), batch_size):
             batch = texts[i : i + batch_size]
             try:
-                config = get_embedding_config()
+                config = self.embedding_config
 
                 response = self.client.embeddings.create(
                     model=config.model,
@@ -234,7 +238,19 @@ class DocumentProcessor:
     ) -> int:
         """保存文档分片到ChromaDB（批量 embedding + 单次写入）"""
         try:
-            collection = self.chromadb_client.get_or_create_collection(name=collection_name)
+            embedding_config = get_embedding_config()
+            chroma_config = get_chroma_config()
+            collection = self.chromadb_client.get_or_create_collection(
+                name=collection_name,
+                metadata={
+                    "hnsw:space": chroma_config.distance_metric,
+                    "embedding_model": embedding_config.model,
+                    "embedding_dimensions": str(
+                        embedding_config.dimensions
+                    ),
+                },
+            )
+
             logger.info("save_to_chroma: 收到 %d 个分片", len(splits))
 
             # 收集有效分片
