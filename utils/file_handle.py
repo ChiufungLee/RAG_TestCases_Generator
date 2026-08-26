@@ -17,6 +17,8 @@ from config import (
     get_upload_dir,
 )
 
+from config import get_embedding_config
+
 logger = logging.getLogger(__name__)
 
 
@@ -44,11 +46,13 @@ class DocumentProcessor:
     def embed(self, text: str) -> List[float]:
         """生成单条文本的嵌入向量"""
         try:
+            config = get_embedding_config()
+
             response = self.client.embeddings.create(
-                model="text-embedding-v4",
+                model=config.model,
                 input=text,
-                dimensions=1024,
-                encoding_format="float",
+                dimensions=config.dimensions,
+                encoding_format=config.encoding_format,
             )
             return response.data[0].embedding
         except Exception as e:
@@ -61,11 +65,13 @@ class DocumentProcessor:
         for i in range(0, len(texts), batch_size):
             batch = texts[i : i + batch_size]
             try:
+                config = get_embedding_config()
+
                 response = self.client.embeddings.create(
-                    model="text-embedding-v4",
+                    model=config.model,
                     input=batch,
-                    dimensions=1024,
-                    encoding_format="float",
+                    dimensions=config.dimensions,
+                    encoding_format=config.encoding_format,
                 )
                 vectors.extend([item.embedding for item in response.data])
             except Exception as e:
