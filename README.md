@@ -97,7 +97,7 @@ TEMP_UPLOAD_DIR=./temp_uploads
 - `EMBEDDING_DIMENSIONS` 必须与已写入 Chroma 集合的向量维度一致。
 - `RETRIEVER_TOP_K` 是最终返回的文档数量，`RETRIEVER_CANDIDATE_K` 是初始召回数量。
 - `RETRIEVER_ENABLE_DISTANCE_FILTER` 为 `true` 且设置了 `RETRIEVER_DISTANCE_THRESHOLD` 时，才会启用距离阈值过滤。
-- 模型配置优先使用上述 `LLM_*` 和 `EMBEDDING_*` 变量；旧版 `DEEPSEEK_API_KEY`、`ALIYUN_API_KEY` 和 `ALIYUN_BASE_URL` 可作为 API 凭证和地址的兼容回退配置。
+- 模型配置使用上述 `LLM_*` 和 `EMBEDDING_*` 变量，LLM 与 Embedding 的 API 凭证和地址彼此独立。
 
 ### 3. 启动应用
 

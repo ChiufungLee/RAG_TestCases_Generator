@@ -10,6 +10,7 @@ fastapi_venv/*
 chroma_db/*
 temp_uploads/*
 uploads/*
-config.py
+CLAUDE.md
+AGENTS.md
 pytest.ini
 tests/
