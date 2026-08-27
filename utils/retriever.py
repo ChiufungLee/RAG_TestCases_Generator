@@ -13,7 +13,7 @@ from config import (
     get_retriever_config,
     get_rag_db_path, 
 )
-from services import knowledge_service
+
 
 logger = logging.getLogger(__name__)
 
@@ -185,6 +185,7 @@ async def get_rag_retriever_by_kb(kb_or_id, db: Session):
 
     # Step 3: load KB object (avoids duplicate DB query in string branch)
     if isinstance(kb_or_id, str):
+        from services import knowledge_service
         kb = await knowledge_service.get_knowledge_base_by_id(db=db, kb_id=kb_id)
         if not kb:
             return None

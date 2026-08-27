@@ -24,8 +24,6 @@ logger = logging.getLogger(__name__)
 @functools.lru_cache(maxsize=1)
 def _get_cached_llm_model():
     """初始化并缓存大语言模型实例"""
-    # api_key = get_deepseek_api_key()
-
     config = get_llm_config()
 
     timeout = httpx.Timeout(
